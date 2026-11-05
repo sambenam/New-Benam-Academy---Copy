@@ -1,9 +1,10 @@
 /**
  * Admin panel — the single source of data
  *
- * appState is the one object every view reads from. It is seeded from
- * localStorage so the panel paints immediately, then hydrateFromApi()
- * refreshes it from appApi in the background.
+ * appState is the one object every view reads from. It starts EMPTY and is
+ * hydrated exclusively through appApi (the backend). No localStorage /
+ * sessionStorage is used to simulate users, orders, products, messages or
+ * ads. See docs/تحویل-به-بک‌اند.md for the backend handoff.
  *
  * persistAdmin() is the only way a change reaches the API. It never throws
  * at the caller: a failed write shows a toast and leaves the local copy
@@ -18,468 +19,83 @@
 
 function toPersianDigits(value) {
   const charMap = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
-  // `value || ""` swallowed the number 0, because 0 is falsy - so a genuine
-  // count of zero rendered as an empty string ("۰ عدد" came out as " عدد").
-  // Only null and undefined should become an empty string.
   const text = value === null || value === undefined ? "" : String(value);
   return text.replace(/[0-9]/g, (match) => charMap[parseInt(match)]);
 }
 
+/* ----------------------------------------------------------------------------
+   Loaders — all return empty until the backend is wired. No localStorage.
+   -------------------------------------------------------------------------- */
 function loadDynamicProducts() {
-  try {
-    const raw = localStorage.getItem("benamacademyProducts");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter((p) => p && p.id) : [];
-    }
-  } catch (e) {
-    console.warn("admin: error loading products", e);
-  }
-  localStorage.setItem("benamacademyProducts", JSON.stringify([]));
   return [];
 }
 
-/** Promotional banners, managed from the "تبلیغات" tab. */
 function loadDynamicAds() {
-  try {
-    const raw = localStorage.getItem("benamacademyAds");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    }
-  } catch (e) {
-    console.warn("admin: error loading ads", e);
-  }
   return [];
 }
-
-const initialOrders = [
-  {
-    id: "#۷۴۸۳۲",
-    customer: "سام به‌نام",
-    product: "دانلود فایل PDF دوره حسابداری مقدماتی",
-    amount: "۴۹,۰۰۰ تومان",
-    date: "۱۴۰۵/۰۵/۰۱",
-    status: "success",
-  },
-  {
-    id: "#۵۸۳۹۲",
-    customer: "مریم حسینی",
-    product: "دانلود ویدیوهای آموزشی دوره حسابداری مقدماتی",
-    amount: "۹۵,۰۰۰ تومان",
-    date: "۱۴۰۵/۰۴/۳۰",
-    status: "success",
-  },
-  {
-    id: "#۴۸۲۹۱",
-    customer: "علی رضایی",
-    product: "پکیج آموزش ثبت سند حسابداری از صفر تا صد",
-    amount: "۲۹,۰۰۰ تومان",
-    date: "۱۴۰۵/۰۴/۲۹",
-    status: "success",
-  },
-];
 
 function loadDynamicOrders() {
-  try {
-    const raw = localStorage.getItem("benamacademyOrders");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : initialOrders;
-    }
-  } catch (e) {
-    console.warn("admin: error loading orders", e);
-  }
-  localStorage.setItem("benamacademyOrders", JSON.stringify(initialOrders));
-  return initialOrders;
-}
-
-const initialUsers = [
-  {
-    id: 1,
-    name: "سام به‌نام",
-    email: "sam@example.com",
-    phone: "09121111111",
-    role: "مدیر سایت",
-    status: "فعال",
-  },
-  {
-    id: 2,
-    name: "محمد رضایی",
-    email: "mohammad@example.com",
-    phone: "09122222222",
-    role: "ادمین",
-    status: "فعال",
-  },
-  {
-    id: 3,
-    name: "علی احمدی",
-    email: "ali@example.com",
-    phone: "09121234567",
-    role: "کاربر عادی",
-    status: "فعال",
-  },
-  {
-    id: 4,
-    name: "سارا محمدی",
-    email: "sara@example.com",
-    phone: "09129876543",
-    role: "کاربر عادی",
-    status: "فعال",
-  },
-  {
-    id: 5,
-    name: "زهرا کریمی",
-    email: "zahra@example.com",
-    phone: "09123456789",
-    role: "کاربر عادی",
-    status: "غیرفعال",
-  },
-];
-
-function normalizeUserContact(user) {
-  const copy = Object.assign({}, user);
-  const isEmptyValue = function (value) {
-    return !value || String(value).trim() === "—";
-  };
-  if (isEmptyValue(copy.email) || isEmptyValue(copy.phone)) {
-    const parts = String(copy.contact || "")
-      .split(/\s*\/\s*/)
-      .filter(Boolean);
-    if (isEmptyValue(copy.email))
-      copy.email =
-        parts.find(function (value) {
-          return value.includes("@");
-        }) || "—";
-    if (isEmptyValue(copy.phone))
-      copy.phone =
-        parts.find(function (value) {
-          return !value.includes("@");
-        }) || "09121234567";
-  }
-  return copy;
+  return [];
 }
 
 function loadDynamicUsers() {
-  try {
-    const raw = localStorage.getItem("benamacademyUsers");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(Boolean).map(normalizeUserContact);
-      }
-    }
-  } catch (e) {
-    console.warn("admin: error loading users", e);
-  }
-  localStorage.setItem("benamacademyUsers", JSON.stringify(initialUsers));
-  return initialUsers;
+  return [];
 }
 
-/**
- * Verify the admin's current password.
- *
- * BACKEND NOTE: replace the body of this function with
- *   return appApi.admin.auth.verifyPassword({ password: input });
- * The rest of the panel only calls verifyAdminPassword(), so no other file
- * needs to change when real authentication lands.
- *
- * Until then the credential lives in localStorage and is *never* rendered
- * back into the DOM. A first-run password is generated instead of shipping a
- * hardcoded default in source control.
- */
-/** Has a panel password been set on this device yet? */
+function normalizeUserContact(user) {
+  return user;
+}
 
 function loadSystemSettings() {
-  const defaultSettings = {
+  return {
     supportEmail: "support@benamacademy.ir",
     supportPhone: "۰۹۱۲۳۴۵۶۷۸۹",
     maintenanceMode: false,
-    merchantId: "e482da20-9bf3-482a-89a1-893f2dae89cf",
+    merchantId: "",
     currencyUnit: "toman",
     adminName: "مدیر کل سایت",
     adminAvatar: "../images/ravin.png",
   };
-
-  try {
-    const raw = localStorage.getItem("benamacademySystemSettings");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? parsed
-        : defaultSettings;
-    }
-  } catch (e) {
-    console.warn("admin: error loading settings", e);
-  }
-  localStorage.setItem(
-    "benamacademySystemSettings",
-    JSON.stringify(defaultSettings),
-  );
-  return defaultSettings;
 }
-
-/* ============================================================================
-   PERMISSIONS
-   ----------------------------------------------------------------------------
-   Two tiers inside the panel:
-
-     manager  (مدیر سایت / مدیر سیستم)  full access
-     admin    (ادمین)                    read-only on the users tab, no
-                                         settings changes, no staff editing
-
-   The role comes from the login session, so whoever signs in decides what the
-   panel exposes.
-
-   BACKEND NOTE: this only shapes the UI. A determined user can edit these
-   values in devtools, so the server must apply the same policy - masked
-   fields should not even be sent to an "ادمین" account, and write endpoints
-   must reject them.
-   ========================================================================== */
-
-/* ----------------------------------------------------------------------------
-   Development helpers
-   Exposed on window so you can flip roles from the browser console while
-   ADMIN_AUTH_ENABLED is false:
-
-     adminDev.whoami()        show the current role
-     adminDev.asManager()     become مدیر سایت (full access)
-     adminDev.asAdmin()       become ادمین (restricted) to check the locks
-     adminDev.reset()         clear the session and start over
-
-   BACKEND NOTE: delete this block before the site goes public. It only works
-   because there is no server deciding roles yet.
-   -------------------------------------------------------------------------- */
-
-const initialMessages = [
-  {
-    id: 1,
-    sender: "علی احمدی",
-    email: "ali@example.com",
-    text: "سلام، وقت بخیر. آیا دوره حسابداری مقدماتی شامل پشتیبانی تلگرامی هم هست؟",
-    time: "۱۴۰۵/۰۵/۰۲ - ۱۰:۳۰",
-    unread: true,
-    history: [
-      {
-        sender: "user",
-        name: "علی احمدی",
-        text: "سلام، وقت بخیر. آیا دوره حسابداری مقدماتی شامل پشتیبانی تلگرامی هم هست؟",
-        time: "۱۴۰۵/۰۵/۰۲ - ۱۰:۳۰",
-      },
-    ],
-  },
-  {
-    id: 2,
-    sender: "سارا محمدی",
-    email: "sara@example.com",
-    text: "درود بر شما. فایل اکسل محاسبه حقوق و دستمزد را خریدم ولی دانلود نشد. لطفا راهنمایی کنید.",
-    time: "۱۴۰۵/۰۵/۰۱ - ۱۶:۴۵",
-    unread: true,
-    history: [
-      {
-        sender: "user",
-        name: "سارا محمدی",
-        text: "درود بر شما. فایل اکسل محاسبه حقوق و دستمزد را خریدم ولی دانلود نشد. لطفا راهنمایی کنید.",
-        time: "۱۴۰۵/۰۵/۰۱ - ۱۶:۴۵",
-      },
-    ],
-  },
-  {
-    id: 3,
-    sender: "محمد رضایی",
-    email: "mohammad@example.com",
-    text: "سلام. خسته نباشید. آزمون استخدامی بعدی وزارت اقتصاد چه زمانی برگزار می‌شود؟",
-    time: "۱۴۰۵/۰۴/۳۰ - ۱۴:۱۵",
-    unread: false,
-    history: [
-      {
-        sender: "user",
-        name: "محمد رضایی",
-        text: "سلام. خسته نباشید. آزمون استخدامی بعدی وزارت اقتصاد چه زمانی برگزار می‌شود؟",
-        time: "۱۴۰۵/۰۴/۳۰ - ۱۴:۱۵",
-      },
-      {
-        sender: "admin",
-        name: "مدیر کل سایت",
-        text: "سلام دوست عزیز، هنوز بخشنامه جدیدی صادر نشده است. به محض اعلام اخبار، در تب آزمون‌ها قرار می‌گیرد.",
-        time: "۱۴۰۵/۰۴/۳۰ - ۱۵:۰۰",
-      },
-    ],
-  },
-  {
-    id: 4,
-    sender: "زهرا کریمی",
-    email: "zahra@example.com",
-    text: "سلام. چطور می‌توانم فاکتور خرید دوره مالیاتی را دریافت کنم؟",
-    time: "۱۴۰۵/۰۵/۰۳ - ۰۹:۰۰",
-    unread: true,
-    history: [
-      {
-        sender: "user",
-        name: "زهرا کریمی",
-        text: "سلام. چطور می‌توانم فاکتور خرید دوره مالیاتی را دریافت کنم؟",
-        time: "۱۴۰۵/۰۵/۰۳ - ۰۹:۰۰",
-      },
-    ],
-  },
-  {
-    id: 5,
-    sender: "پشتیبان تستی",
-    email: "test-support@example.com",
-    text: "این یک پیام آزمایشی خوانده‌نشده و بی‌پاسخ است تا بتوانید تپش قلب و انتقال‌ها را به راحتی تست کنید.",
-    time: "۱۴۰۵/۰۵/۰۳ - ۱۲:۰۰",
-    unread: true,
-    history: [
-      {
-        sender: "user",
-        name: "پشتیبان تستی",
-        text: "این یک پیام آزمایشی خوانده‌نشده و بی‌پاسخ است تا بتوانید تپش قلب و انتقال‌ها را به راحتی تست کنید.",
-        time: "۱۴۰۵/۰۵/۰۳ - ۱۲:۰۰",
-      },
-    ],
-  },
-];
 
 function loadDynamicMessages() {
-  try {
-    const raw = localStorage.getItem("benamacademyMessages");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      // Clean up legacy localstorage data by converting it or filtering
-      if (Array.isArray(parsed)) {
-        return parsed.map(function (msg) {
-          if (msg && !Array.isArray(msg.history)) {
-            // Convert old legacy messages to new history bubble format!
-            msg.history = [
-              {
-                sender: "user",
-                name: msg.sender,
-                text: msg.text,
-                time: msg.time,
-              },
-            ];
-            if (msg.reply) {
-              msg.history.push({
-                sender: "admin",
-                name: msg.repliedBy || "مدیر کل سایت",
-                text: msg.reply,
-                time: msg.replyTime || msg.time,
-              });
-            }
-          }
-          return msg;
-        });
-      }
-    }
-  } catch (e) {
-    console.warn("admin: error loading messages", e);
-  }
-  localStorage.setItem("benamacademyMessages", JSON.stringify(initialMessages));
-  return initialMessages;
-}
-
-/* ----------------------------------------------------------------------------
-   READ SIDE OF appState
-
-   These four live here rather than with the tab that uses them because
-   appState calls them the instant this file is parsed. Put them in a later
-   file and the browser throws:
-
-       ReferenceError: loadAdminNotifications is not defined
-
-   The notification key and the staff-id resolver are the only two pieces of
-   other tabs' code that have to run this early.
-   -------------------------------------------------------------------------- */
-
-const NOTIFICATIONS_KEY = "benamacademyNotifications";
-
-function loadAdminNotifications() {
-  try {
-    const raw = localStorage.getItem(NOTIFICATIONS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (e) {
-    console.warn("admin: error loading notifications", e);
-  }
   return [];
 }
 
-function persistAdminNotifications() {
-  try {
-    // Keep the list from growing without bound; the newest 200 is plenty.
-    const trimmed = (appState.notifications || []).slice(0, 200);
-    localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(trimmed));
-  } catch (e) {
-    console.warn("admin: error saving notifications", e);
-  }
-}
+/** Roles with full panel access. */
+const MANAGER_ROLES = ["مدیر سایت", "مدیر سیستم", "مدیر", "admin", "manager"];
 
 /**
  * Which staff record belongs to the signed-in operator.
- *
- * Resolved from the session by email, because ids differ between the auth
- * store and the panel's staff list. Falls back to the first manager so the
- * panel still works while auth is disabled in development.
+ * Resolved from the session by email once the backend sets a session.
+ * Falls back to the first manager while auth is disabled in development.
  */
 function resolveCurrentStaffId() {
-  let email = "";
-  try {
-    const raw = localStorage.getItem("benamacademySession");
-    const session = raw ? JSON.parse(raw) : null;
-    email = String(
-      (session && session.user && session.user.email) || "",
-    ).toLowerCase();
-  } catch (error) {
-    email = "";
-  }
-
   const pool = (typeof appState !== "undefined" && appState.users) || [];
-  if (email) {
-    const match = pool.find(
-      (u) => String(u.email || "").toLowerCase() === email,
-    );
-    if (match) return match.id;
-  }
   const firstManager = pool.find((u) => MANAGER_ROLES.indexOf(u.role) !== -1);
-  return firstManager ? firstManager.id : 1;
+  return firstManager ? firstManager.id : null;
 }
 
-// Seeded to 1, then resolved from the session as soon as appState exists
-// (see just below the appState declaration). It cannot be resolved here:
-// resolveCurrentStaffId() reads appState, which is declared further down.
-let currentStaffProfileId = 1;
+// Seeded empty; resolved from the session as soon as appState exists and the
+// backend provides users. Until then currentStaffProfileId stays null.
+let currentStaffProfileId = null;
 
 let appState = {
   users: loadDynamicUsers(),
   products: loadDynamicProducts(),
   orders: loadDynamicOrders(),
-  notifications: loadAdminNotifications(),
+  notifications: [],
   messages: loadDynamicMessages(),
   ads: loadDynamicAds(),
+  settings: loadSystemSettings(),
 };
-
-// Work out who is signed in now that the user list exists. This used to wait
-// for hydrateFromApi(), so until that async call resolved an admin counted as
-// the first manager in the list - and anything reading the role in that
-// window, notification visibility included, got the wrong answer.
-currentStaffProfileId = resolveCurrentStaffId();
 
 /* ============================================================================
    API HYDRATION LAYER
    ----------------------------------------------------------------------------
-   appState is seeded synchronously above (from localStorage) so the panel can
-   paint immediately. hydrateFromApi() then pulls the authoritative data
-   through appApi and re-renders.
-
-   Why this matters for the backend: appApi.admin.* is the ONLY place that
-   knows where data comes from. Today it reads localStorage; once
-   APP_API_CONFIG.mode is "real" it hits the server. Nothing in this file
-   changes.
-
-   It also merges data the public site produced - contact-form messages and
-   real signups - which the panel previously never saw.
+   appState starts empty above. hydrateFromApi() pulls the authoritative data
+   through appApi and re-renders. appApi.admin.* is the ONLY place that knows
+   where data comes from; once the backend is attached this hits the server.
    ========================================================================== */
 async function hydrateFromApi() {
   if (typeof appApi === "undefined" || !appApi.admin) return;
@@ -489,28 +105,26 @@ async function hydrateFromApi() {
     ["products", appApi.admin.products.list()],
     ["orders", appApi.admin.orders.list()],
     ["messages", appApi.admin.messages.list()],
-    // Both were browser-only before, so the panel never showed what another
-    // operator had already seen or dismissed.
     ["notifications", appApi.admin.notifications.list()],
     ["ads", appApi.admin.ads.list()],
+    ["settings", appApi.admin.settings.get()],
   ];
 
   const results = await Promise.allSettled(tasks.map(([, p]) => p));
 
   results.forEach((result, index) => {
     const key = tasks[index][0];
-    if (result.status === "fulfilled" && Array.isArray(result.value)) {
+    if (result.status === "fulfilled" && result.value) {
       if (key === "notifications") {
-        // Merge rather than replace. Events can be raised while this request
-        // is still in flight - a signup or an order arriving on another tab -
-        // and a plain assignment threw those away before anyone saw them.
-        const incoming = result.value;
+        const incoming = Array.isArray(result.value) ? result.value : [];
         const known = new Set(incoming.map((n) => String(n.id)));
         const local = (appState.notifications || []).filter(
           (n) => !known.has(String(n.id)),
         );
         appState.notifications = local.concat(incoming);
-      } else {
+      } else if (key === "settings" && typeof result.value === "object") {
+        appState.settings = { ...appState.settings, ...result.value };
+      } else if (Array.isArray(result.value)) {
         appState[key] = result.value;
       }
     } else if (result.status === "rejected") {
@@ -518,13 +132,9 @@ async function hydrateFromApi() {
     }
   });
 
-  // The staff list is now real, so the signed-in operator can be matched.
   currentStaffProfileId = resolveCurrentStaffId();
 
-  // Announce anything that happened while the panel was closed. Runs after
-  // hydration so it works from the authoritative lists, not the stale seed.
   if (typeof reconcileNotifications === "function") reconcileNotifications();
-
   refreshAllViews();
 }
 
@@ -558,8 +168,6 @@ function refreshAllViews() {
   };
   const active = document.querySelector(".admin-view.active")?.id.replace(/^view-/, "");
 
-  // Dashboard summaries stay current, but large hidden tables/inboxes wait
-  // until their tab is actually opened (switchView renders each on entry).
   safe(typeof renderDashboardOrders === "function" ? renderDashboardOrders : null);
   safe(typeof renderDashboardProducts === "function" ? renderDashboardProducts : null);
   safe(typeof updateDashboardMetrics === "function" ? updateDashboardMetrics : null);
