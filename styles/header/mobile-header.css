@@ -60,8 +60,12 @@ a {
     font-size: 19px;
 }
 
-/* Website Logo */
+/* Website Logo — logo + "بنام آکادمی" side by side, text always on the right of the logo */
 .website-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex-direction: row-reverse;
     padding: 0.5rem 0 0 0.75rem;
 }
 
@@ -70,6 +74,16 @@ a {
     height: 40px;
     object-fit: contain;
     border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.website-logo_text {
+    font-family: "Vazirmatn", "Segoe UI", sans-serif;
+    font-size: 16px;
+    font-weight: 800;
+    color: #f4f7ff;
+    white-space: nowrap;
+    letter-spacing: 0.2px;
 }
 
 /* Mobile Menu - Glass Effect */
