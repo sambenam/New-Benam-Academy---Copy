@@ -25,7 +25,15 @@ const HOME_SECTION_ANCHORS = [
   { key: "articles", title: "مقالات", selector: ".articles-section" },
   // Keep the saved `exams` key for existing custom sections, but anchor it to
   // the homepage news ticker that now replaces the old exam/news card section.
-  { key: "exams", title: "آخرین اخبار سایت", selector: "[data-home-news]" },
+  // `legacy` hides it from the panel's placement dropdown: new sections can no
+  // longer be placed after the news ticker, but previously saved ones still
+  // render where they always did.
+  {
+    key: "exams",
+    title: "آخرین اخبار سایت",
+    selector: "[data-home-news]",
+    legacy: true,
+  },
 ];
 
 const HOME_SECTIONS_KEY = "benamacademyHomeSections";
@@ -146,18 +154,26 @@ function buildCustomSection(section) {
             <h3 class="course-title">${esc(item.title)}</h3>
             <p class="course-description">${esc(item.excerpt || "توضیحی برای این آیتم ثبت نشده است.")}</p>
             <a href="single-post.html?id=${encodeURIComponent(item.id)}" class="popular-courses_link">
-              مشاهده توضیحات <i class="fas fa-arrow-left"></i>
+              مشاهده توضیحات <i class="fas fa-chevron-left"></i>
             </a>
           </div>
         </li>`,
     )
     .join("");
 
+  // Built-in section titles end in a gradient word ("دوره‌های جدید"); give
+  // custom sections the same treatment so they do not look out of place.
+  const titleWords = String(section.title || "").trim().split(/\s+/);
+  const lastWord = titleWords.length > 1 ? titleWords.pop() : "";
+  const titleHtml = lastWord
+    ? `${esc(titleWords.join(" "))} <span class="text-gradient">${esc(lastWord)}</span>`
+    : esc(section.title);
+
   el.innerHTML = `
     <div class="section-header">
       <h2 class="section-title">
         <i class="fas ${esc(section.icon || "fa-layer-group")}"></i>
-        ${esc(section.title)}
+        ${titleHtml}
       </h2>
       ${
         section.showAll === false
