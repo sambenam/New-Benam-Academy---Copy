@@ -1,18 +1,8 @@
 /**
  * Admin panel — orders tab and CSV export
  *
- * The orders table, the summary tiles above it, the per-order detail sheet
- * and the four CSV downloads.
- *
- * Amounts are read through orderAmountValue() rather than parsed inline,
- * because older rows stored a formatted string like '۴۹,۰۰۰ تومان' while
- * new ones store a number.
- *
- * Split out of scripts/admin.js, which had grown to 5,241 lines. Every
- * classic <script> shares one global scope, so these files see each other
- * exactly as one file would. The load order in html/admin.html matters only
- * for code that runs while a file is being parsed; boot.js is last because
- * it is the only file that does that on purpose.
+ * The orders table, summary tiles, per-order detail sheet and CSV downloads.
+ * Data comes from appState.orders (hydrated via appApi). No localStorage.
  */
 
 function csvCell(value) {
@@ -21,17 +11,10 @@ function csvCell(value) {
   return '"' + text.replace(/"/g, '""') + '"';
 }
 
-/** Build a CSV row from a list of values. */
 function csvRow(values) {
   return values.map(csvCell).join(",") + "\n";
 }
 
-/**
- * Hand the file to the browser.
- *
- * The filename stays ASCII - a name built from Persian digits confuses
- * Windows and some cloud drives.
- */
 function triggerCsvDownload(content, baseName) {
   const stamp = new Date().toISOString().slice(0, 10);
   const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
@@ -42,8 +25,6 @@ function triggerCsvDownload(content, baseName) {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  // Release the object URL, otherwise the blob stays in memory for the life
-  // of the page.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
@@ -53,7 +34,6 @@ function downloadOrdersReport() {
     return;
   }
 
-  // UTF-8 BOM to support Persian characters in Excel!
   let csvContent = "\uFEFF";
   csvContent += csvRow([
     "شماره سفارش",
@@ -68,13 +48,10 @@ function downloadOrdersReport() {
   ]);
 
   appState.orders.forEach((o) => {
-    // No invented placeholders - an empty field should read as empty in the
-    // report, not as somebody's fake phone number.
     const phone = o.buyerPhone || "—";
     const email = o.buyerEmail || "—";
     const statusText = getStatusText(o.status);
 
-    // Convert to Farsi digits for report
     const fId = toPersianDigits(o.id);
     const fPhone = toPersianDigits(phone);
     const fAmount = formatOrderAmount(o.amount);
@@ -104,7 +81,6 @@ function downloadSingleOrderInvoice(orderId) {
     return;
   }
 
-  // UTF-8 BOM
   let csvContent = "\uFEFF";
   csvContent += "فاکتور خرید محصول پلتفرم بنام آکادمی\n\n";
   csvContent +=
@@ -114,7 +90,6 @@ function downloadSingleOrderInvoice(orderId) {
   const email = order.buyerEmail || "sam@example.com";
   const statusText = order.status === "success" ? "موفق (تکمیل شده)" : "ناموفق";
 
-  // Convert to Farsi digits for invoice
   const fId = toPersianDigits(order.id);
   const fPhone = toPersianDigits(phone);
   const fAmount = toPersianDigits(order.amount);
@@ -122,10 +97,7 @@ function downloadSingleOrderInvoice(orderId) {
 
   csvContent += `"${fId}","${order.customer}","${fPhone}","${email}","${order.product}","${fAmount}","${fDate}","${statusText}"\n`;
 
-  triggerCsvDownload(
-    csvContent,
-    "invoice-" + String(order.id).replace(/[^0-9]/g, ""),
-  );
+  triggerCsvDownload(csvContent, "invoice-" + String(order.id).replace(/[^0-9]/g, ""));
 }
 
 function openOrderDetailModal(orderId) {
@@ -135,7 +107,6 @@ function openOrderDetailModal(orderId) {
     return;
   }
 
-  // Populate modal fields with gorgeous Persian digits
   document.getElementById("detailOrderNum").textContent =
     "شماره سفارش: " + toPersianDigits(order.id);
   document.getElementById("detailOrderCustomer").textContent =
@@ -154,21 +125,6 @@ function openOrderDetailModal(orderId) {
     order.date || "---",
   );
 
-  // Try to find the download link for this product
-  let fileUrl = "";
-  try {
-    const prodsRaw = localStorage.getItem("benamacademyProducts");
-    const prods = prodsRaw ? JSON.parse(prodsRaw) : [];
-    if (Array.isArray(prods)) {
-      const match = prods.find(
-        (p) => String(p.id) === String(order.productId || order.product),
-      );
-      if (match && match.fileUrl) {
-        fileUrl = match.fileUrl;
-      }
-    }
-  } catch (e) {}
-
   const downloadContainer = document.getElementById(
     "detailOrderDownloadContainer",
   );
@@ -176,27 +132,11 @@ function openOrderDetailModal(orderId) {
     const invoice = document.createElement("button");
     invoice.type = "button";
     invoice.className = "btn-primary";
-    invoice.style.cssText = "background:#10b981;border-color:#10b981;padding:10px 20px;border-radius:8px;font-weight:bold;display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;border:none;";
+    invoice.style.cssText =
+      "background:#10b981;border-color:#10b981;padding:10px 20px;border-radius:8px;font-weight:bold;display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;border:none;";
     invoice.innerHTML = '<i class="fas fa-file-excel"></i> دانلود فاکتور اکسل (CSV)';
     invoice.addEventListener("click", () => downloadSingleOrderInvoice(order.id));
     downloadContainer.replaceChildren(invoice);
-
-    if (fileUrl && fileUrl !== "#") {
-      try {
-        const candidate = new URL(String(fileUrl), window.location.href);
-        if (candidate.protocol === "http:" || candidate.protocol === "https:") {
-          const download = document.createElement("a");
-          download.href = candidate.href;
-          download.download = "";
-          download.className = "btn-primary";
-          download.style.cssText = "background:#007aff;border-color:#007aff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:bold;display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-right:10px;";
-          download.innerHTML = '<i class="fas fa-file-arrow-down"></i> دانلود فایل اصلی محصول';
-          downloadContainer.appendChild(download);
-        }
-      } catch (e) {
-        // A malformed or non-web file URL is not made into an active link.
-      }
-    }
   }
 
   openModal("orderDetailModal");
@@ -215,8 +155,6 @@ function renderOrdersTable() {
     rows
       .map((order) => {
         const safeId = String(order.id).replace(/'/g, "\\'");
-        // Only a completed payment is money in the bank; showing a failed
-        // attempt in green would misread at a glance.
         const amountColour =
           order.status === "success"
             ? "var(--success)"
@@ -243,7 +181,6 @@ function renderOrdersTable() {
   renderOrderSummary();
 }
 
-/** A small tally above the table: how many succeeded, failed, or were dropped. */
 function renderOrderSummary() {
   const host = document.getElementById("ordersSummary");
   if (!host) return;
@@ -268,8 +205,6 @@ function renderOrderSummary() {
     .join("");
 }
 
-// Track recently replied message ID to flash it
-
 function getStatusText(status) {
   if (status === "success") return "پرداخت موفق";
   if (status === "pending") return "در حال پردازش";
@@ -278,19 +213,11 @@ function getStatusText(status) {
   return status;
 }
 
-/**
- * Money for display.
- *
- * Orders store the amount as a number so reports can add it up; older rows
- * kept a pre-formatted string like "۴۹,۰۰۰ تومان", so both are handled.
- */
 function formatOrderAmount(amount) {
   if (typeof amount === "number") {
     return toPersianDigits(amount.toLocaleString()) + " تومان";
   }
   const text = String(amount || "").trim();
   if (!text) return "—";
-  return /تومان/.test(text)
-    ? toPersianDigits(text)
-    : toPersianDigits(text) + " تومان";
+  return /تومان/.test(text) ? toPersianDigits(text) : toPersianDigits(text) + " تومان";
 }

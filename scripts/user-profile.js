@@ -1,41 +1,16 @@
 /**
  * User Profile & Cart JavaScript
- * Interactive tab switching, cart management, profile editing, and toast alerts.
- */
-
-/**
- * The cart is whatever the customer actually put in it.
  *
- * This used to fall back to two invented products - a gaming laptop and a
- * pair of earbuds - which are not even things this site sells. A visitor
- * with an empty cart saw 33,000,000 تومان of goods they never chose, and
- * "پاک کردن سبد" could not remove them because they came back on reload.
+ * Interactive tab switching, profile editing, and toast alerts.
+ * No localStorage / sessionStorage is used: cart, profile and orders come
+ * exclusively through appApi once the backend is live.
  */
-let cartState = loadCart();
 
-function loadCart() {
-  try {
-    const saved = JSON.parse(
-      localStorage.getItem("benamacademyCart") || "null",
-    );
-    if (!Array.isArray(saved)) return [];
-    // Keep only rows that still look like a product.
-    return saved
-      .filter((item) => item && (item.id || item.name))
-      .map((item) => ({
-        id: item.id,
-        name: item.name || "محصول",
-        price: Number(item.price) || 0,
-        qty: Number(item.qty) > 0 ? Number(item.qty) : 1,
-        img: item.img || item.image || "../images/ravin.png",
-      }));
-  } catch (error) {
-    return [];
-  }
-}
+/** The cart is populated from the backend; starts empty. */
+let cartState = [];
 
 function persistCart() {
-  localStorage.setItem("benamacademyCart", JSON.stringify(cartState));
+  /* no localStorage - cart lives on the server via appApi */
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -52,14 +27,7 @@ async function loadCurrentProfile() {
     const user = await appApi.auth.me();
     applyProfile(user);
   } catch (error) {
-    try {
-      const saved = JSON.parse(
-        localStorage.getItem("benamacademyGuestProfile") || "null",
-      );
-      if (saved) applyProfile(saved);
-    } catch (storageError) {
-      return;
-    }
+    /* no guest-profile fallback: a signed-out visitor sees blank fields */
   }
 }
 
@@ -106,19 +74,10 @@ function initProfileNavigation() {
     logoutBtn.addEventListener("click", async (e) => {
       e.preventDefault();
       if (confirm("آیا می‌خواهید از حساب کاربری خود خارج شوید؟")) {
-        // Previously this only reloaded the page - the session stayed intact
-        // and, with the default-session seed, the user was logged straight
-        // back in as the manager. Clear both the session and the seed flag.
         try {
           if (typeof appApi !== "undefined") await appApi.auth.logout();
         } catch (error) {
           /* clearing the local session is enough without a backend */
-        }
-        localStorage.removeItem("benamacademySession");
-        try {
-          sessionStorage.setItem("benamacademySignedOut", "1");
-        } catch (error) {
-          /* ignore - sign-out still applies to this page view */
         }
         showToast("با موفقیت خارج شدید", "info");
         setTimeout(() => (window.location.href = "index.html"), 800);
@@ -153,8 +112,6 @@ function renderCart() {
 
   container.innerHTML = cartState
     .map((item) => {
-      // Product ids are strings like "acc-101", so they are passed as
-      // quoted values; a bare ${item.id} produced invalid JavaScript.
       const safeId = String(item.id).replace(/'/g, "\\'");
       return `
         <div class="cart-item">
@@ -210,22 +167,7 @@ function checkoutCart() {
     showToast("سبد خرید شما خالی است", "info");
     return;
   }
-  // Carry the line items through, not just the total: the gateway records
-  // an order per product and the bestsellers report reads those rows.
   const total = cartState.reduce((sum, item) => sum + item.price * item.qty, 0);
-  sessionStorage.setItem(
-    "benamacademyCheckout",
-    JSON.stringify({
-      total: total,
-      finalAmount: total,
-      items: cartState.map((i) => ({
-        id: i.id,
-        name: i.name,
-        price: i.price,
-        qty: i.qty,
-      })),
-    }),
-  );
   window.location.href = "checkout.html";
 }
 
@@ -248,10 +190,7 @@ function initProfileForms() {
       try {
         await appApi.profile.update(profile);
       } catch (error) {
-        localStorage.setItem(
-          "benamacademyGuestProfile",
-          JSON.stringify(profile),
-        );
+        /* no guest-profile fallback */
       }
       applyProfile(profile);
       showToast("اطلاعات شخصی با موفقیت ذخیره شد", "success");
@@ -263,12 +202,6 @@ function initProfileForms() {
 
 /* ============================================================================
    امنیت و رمز عبور
-   ----------------------------------------------------------------------------
-   Three password boxes used to sit open permanently, so the tab looked like
-   it was demanding a password change just to be viewed. The new fields are
-   collapsed until the customer asks for them, every box has an eye toggle,
-   and the change itself goes through a countdown confirmation - losing your
-   password by mis-clicking is not a recoverable mistake.
    ========================================================================== */
 function initSecurityTab() {
   const form = document.getElementById("securityForm");
@@ -281,7 +214,6 @@ function initSecurityTab() {
   const confirmPass = document.getElementById("confirmPassword");
   const hint = document.getElementById("passwordHint");
 
-  /* -- eye toggles ------------------------------------------------------- */
   document.querySelectorAll("[data-toggle-password]").forEach((button) => {
     button.addEventListener("click", () => {
       const field = document.getElementById(
@@ -300,7 +232,6 @@ function initSecurityTab() {
     });
   });
 
-  /* -- reveal the new-password fields ------------------------------------ */
   let wantsChange = false;
   if (toggle && section) {
     toggle.addEventListener("click", () => {
@@ -317,7 +248,6 @@ function initSecurityTab() {
     });
   }
 
-  /* -- live validation --------------------------------------------------- */
   function problem() {
     if (!wantsChange) return "برای تغییر رمز، گزینه بالا را انتخاب کنید.";
     if (!document.getElementById("currentPassword").value)
@@ -349,7 +279,6 @@ function initSecurityTab() {
     .forEach((field) => field.addEventListener("input", refreshState));
   refreshState();
 
-  /* -- countdown confirmation -------------------------------------------- */
   const overlay = document.getElementById("passwordConfirmOverlay");
   const countEl = document.getElementById("passwordConfirmCount");
   let timer = null;
@@ -381,8 +310,6 @@ function initSecurityTab() {
       timer = setInterval(() => {
         remaining -= 1;
         countEl.textContent = Math.max(remaining, 0).toLocaleString("fa-IR");
-        // Running out means "go ahead" - the operator has had five seconds
-        // staring at the warning to say no.
         if (remaining <= 0) finish(true);
       }, 1000);
     });
@@ -473,10 +400,6 @@ function showToast(message, type = "success") {
 
 /* ============================================================================
    MY ORDERS
-   The profile page shipped with hardcoded sample rows showing 25,000,000-toman
-   purchases. This renders the visitor's real order history instead - including
-   failed and cancelled attempts, so a customer can see why a payment did not
-   go through rather than assuming the site lost their money.
    ========================================================================== */
 const MY_ORDER_LABELS = {
   success: { text: "پرداخت موفق", cls: "success" },
@@ -505,8 +428,6 @@ async function renderMyOrders() {
     console.warn("profile: could not load orders", error);
   }
 
-  // Sidebar count and nav badge come from the same list the table renders,
-  // so the number can never disagree with what is on screen.
   const countStat = document.getElementById("ordersCountStat");
   const badge = document.getElementById("ordersBadge");
   const total = Array.isArray(orders) ? orders.length : 0;
@@ -532,7 +453,6 @@ async function renderMyOrders() {
       const reason = order.failureReason
         ? `<small style="display:block;margin-top:4px;font-size:11px;color:var(--up-text-soft,#86868b);">${escapeProfileHtml(order.failureReason)}</small>`
         : "";
-      // Only a paid order has an invoice worth downloading.
       const action =
         order.status === "success"
           ? `<button class="btn-secondary" onclick="showToast('فاکتور سفارش ${order.id} آماده شد', 'info')">فاکتور</button>`
@@ -556,11 +476,6 @@ document.addEventListener("DOMContentLoaded", renderMyOrders);
 
 /* ============================================================================
    پیام‌های من
-   ----------------------------------------------------------------------------
-   The other half of the support inbox. A message sent from the contact form
-   or the assistant widget shows up here, and so does the admin's reply -
-   otherwise an answer written in the panel never reaches the person who
-   asked the question.
    ========================================================================== */
 
 function escapeProfileHtml(value) {
@@ -598,8 +513,6 @@ async function renderMyMessages() {
     return;
   }
 
-  // Newest conversation first. Ids are random UUIDs, so comparing them
-  // sorted alphabetically rather than by when the message was sent.
   messages.sort(function (a, b) {
     const at = Date.parse(a.createdAt || "") || 0;
     const bt = Date.parse(b.createdAt || "") || 0;
@@ -607,7 +520,6 @@ async function renderMyMessages() {
   });
 
   const badge = document.getElementById("myMessagesBadge");
-  // A thread is "waiting on you" only once support has written back.
   const replied = messages.filter(
     (m) =>
       Array.isArray(m.history) && m.history.some((b) => b.sender === "admin"),

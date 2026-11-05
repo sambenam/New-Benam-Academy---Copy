@@ -15,6 +15,7 @@
  *
  * Which ads appear is decided by GET /ads (active ads only) and the page the
  * visitor is on. A manager edits the set from the admin "تبلیغات" tab.
+ * No localStorage / sessionStorage is used: the widget only calls appApi.ads.list().
  */
 (function () {
   if (typeof appApi === "undefined" || !appApi.ads) return;
@@ -32,23 +33,6 @@
 
   var page = currentPage();
   if (!page) return;
-
-  var COLLAPSED_KEY = "benamacademyAdCollapsed";
-  function savedCollapsed() {
-    try {
-      return sessionStorage.getItem(COLLAPSED_KEY) === "1";
-    } catch (e) {
-      return false;
-    }
-  }
-
-  function matchesPage(ad) {
-    var pages =
-      Array.isArray(ad.pages) && ad.pages.length
-        ? ad.pages
-        : ["home", "list", "single"];
-    return pages.indexOf(page) !== -1;
-  }
 
   var widget = document.getElementById("adsWidget");
   if (!widget) {
@@ -72,11 +56,7 @@
     widget
       .querySelector(".ads-widget__handle")
       .addEventListener("click", function () {
-        var collapse = !widget.classList.contains("is-collapsed");
-        widget.classList.toggle("is-collapsed", collapse);
-        try {
-          sessionStorage.setItem(COLLAPSED_KEY, collapse ? "1" : "0");
-        } catch (e) {}
+        widget.classList.toggle("is-collapsed");
       });
   }
 
@@ -106,11 +86,17 @@
     .list()
     .then(function (ads) {
       if (!Array.isArray(ads)) return;
-      var pool = ads.filter(matchesPage);
+      var pool = ads.filter(function (ad) {
+        var pages =
+          Array.isArray(ad.pages) && ad.pages.length
+            ? ad.pages
+            : ["home", "list", "single"];
+        return pages.indexOf(page) !== -1;
+      });
       if (!pool.length) return;
 
       render(pool[0]);
-      widget.classList.toggle("is-collapsed", savedCollapsed());
+      widget.classList.remove("is-collapsed");
 
       var d = Number(pool[0].delay);
       var delay = (d > 0 ? d : 1.5) * 1000;

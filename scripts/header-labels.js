@@ -1,15 +1,13 @@
 /*
  * Editable labels for the public desktop and mobile navigation.
  *
- * Until the backend settings endpoint is connected, labels are stored in this
- * browser's localStorage under benamacademyHeaderLabels. Replace the local
- * persistence in readLabels / saveLabels with the global settings API adapter
- * during backend handoff.
+ * Labels are now the static defaults below. The backend settings endpoint
+ * (appApi.admin.settings) replaces these when it is connected; no
+ * localStorage is used.
  */
 (function () {
   "use strict";
 
-  const STORAGE_KEY = "benamacademyHeaderLabels";
   const FIELDS = [
     { key: "forStudents", group: "منوهای اصلی", label: "برای دانشجویان", value: "برای دانشجویان" },
     { key: "courses", group: "منوهای اصلی", label: "دوره‌ها", value: "دوره‌ها" },
@@ -50,23 +48,7 @@
   const DEFAULTS = Object.fromEntries(FIELDS.map((field) => [field.key, field.value]));
 
   function readLabels() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const saved = raw ? JSON.parse(raw) : {};
-      if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
-        return { ...DEFAULTS };
-      }
-      const labels = { ...DEFAULTS };
-      FIELDS.forEach((field) => {
-        const value = saved[field.key];
-        if (typeof value === "string" && value.trim()) {
-          labels[field.key] = value.trim().slice(0, 80);
-        }
-      });
-      return labels;
-    } catch (error) {
-      return { ...DEFAULTS };
-    }
+    return { ...DEFAULTS };
   }
 
   function announceChange(labels) {
@@ -80,22 +62,14 @@
   }
 
   function saveLabels(nextLabels) {
-    const cleaned = {};
-    FIELDS.forEach((field) => {
-      const value = String((nextLabels && nextLabels[field.key]) || "").trim();
-      if (!value) throw new Error("نام «" + field.label + "» نمی‌تواند خالی باشد.");
-      cleaned[field.key] = value.slice(0, 80);
-    });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
-    announceChange({ ...DEFAULTS, ...cleaned });
-    return { ...DEFAULTS, ...cleaned };
+    /* no localStorage - settings come from appApi.admin.settings */
+    announceChange({ ...DEFAULTS, ...(nextLabels || {}) });
+    return { ...DEFAULTS, ...(nextLabels || {}) };
   }
 
   function resetLabels() {
-    localStorage.removeItem(STORAGE_KEY);
-    const defaults = { ...DEFAULTS };
-    announceChange(defaults);
-    return defaults;
+    announceChange({ ...DEFAULTS });
+    return { ...DEFAULTS };
   }
 
   function applyLabels(root) {
@@ -126,7 +100,6 @@
   }
 
   window.BenamHeaderLabels = {
-    storageKey: STORAGE_KEY,
     fields: FIELDS,
     defaults: { ...DEFAULTS },
     read: readLabels,
@@ -135,9 +108,6 @@
     apply: applyLabels,
   };
 
-  window.addEventListener("storage", (event) => {
-    if (event.key === STORAGE_KEY) applyLabels(document);
-  });
   window.addEventListener("benam:header-labels-changed", () => applyLabels(document));
 
   if (document.readyState === "loading") {

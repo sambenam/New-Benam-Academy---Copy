@@ -4,13 +4,9 @@
  * The five built-in sections stay exactly as they are in index.html. This adds
  * a way to slot extra sections between them without touching that markup.
  *
- * Anchors are the built-in sections a custom one can be placed after. The hero
- * and the learning path are deliberately absent: they are fixed parts of the
- * page and nothing may be inserted before "دوره‌های محبوب".
- *
- * BACKEND NOTE: sections live in localStorage today and move to
- * GET/POST /api/admin/home-sections when the server is ready. The shape below
- * is the contract.
+ * BACKEND NOTE: sections move to GET/POST /api/admin/home-sections when the
+ * server is ready. Until then loadHomeSections() returns [] so no phantom
+ * sections are rendered from localStorage.
  */
 
 /** Built-in sections a custom section can be placed after, in page order. */
@@ -28,22 +24,14 @@ const HOME_SECTION_ANCHORS = [
   { key: "exams", title: "آخرین اخبار سایت", selector: "[data-home-news]" },
 ];
 
-const HOME_SECTIONS_KEY = "benamacademyHomeSections";
-
-/** Read the custom sections, oldest first. */
+/** Read the custom sections, oldest first. Empty until the backend is live. */
 function loadHomeSections() {
-  try {
-    const raw = localStorage.getItem(HOME_SECTIONS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-  } catch (error) {
-    console.warn("home-sections: could not read storage", error);
-    return [];
-  }
+  return [];
 }
 
+/** Save is a no-op until the backend endpoint exists. */
 function saveHomeSections(sections) {
-  localStorage.setItem(HOME_SECTIONS_KEY, JSON.stringify(sections || []));
+  /* no localStorage - data lives only on the server */
 }
 
 /** A category key derived from the title, unique against existing data. */
@@ -53,7 +41,7 @@ function makeSectionKey(title, taken) {
     String(title || "section")
       .trim()
       .replace(/\s+/g, "_")
-      .replace(/[^\w\u0600-\u06FF_]/g, "")
+      .replace(/[\w\u0600-\u06FF_]/g, "")
       .slice(0, 24);
   let key = base;
   let n = 2;

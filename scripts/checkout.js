@@ -1,24 +1,12 @@
-let CHECKOUT_TOTAL = 49000;
-
+/**
+ * Checkout page.
+ *
+ * No localStorage / sessionStorage is used. Cart contents and the buyer's
+ * details travel through appApi once the backend is wired. Until then the
+ * cart is empty and the page renders nothing to buy.
+ */
 document.addEventListener("DOMContentLoaded", () => {
-  // Dynamically calculate total from benamacademyCart
-  let cart = [];
-  try {
-    cart = JSON.parse(localStorage.getItem("benamacademyCart") || "[]");
-  } catch (error) {
-    cart = [];
-  }
-
-  if (Array.isArray(cart) && cart.length > 0) {
-    CHECKOUT_TOTAL = cart.reduce(
-      (sum, item) => sum + (Number(item.price) || 0) * (item.qty || 1),
-      0,
-    );
-  } else {
-    CHECKOUT_TOTAL = 0;
-  }
-
-  renderCheckoutItems();
+  const cart = []; // populated by appApi once the backend is live
 
   const discountInput = document.getElementById("discountInput");
   const discountButton = document.getElementById("discountBtn");
@@ -26,16 +14,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const discountAmount = document.getElementById("discountAmount");
   const subtotalPrice = document.getElementById("cartSubtotalPrice");
   const finalPrice = document.getElementById("cartFinalPrice");
-  let finalAmount = CHECKOUT_TOTAL;
+  let finalAmount = 0;
 
   const formatMoney = (value) =>
     `${Number(value).toLocaleString("fa-IR")} تومان`;
 
-  if (subtotalPrice) {
-    subtotalPrice.textContent = formatMoney(CHECKOUT_TOTAL);
-  }
-  if (finalPrice) {
-    finalPrice.textContent = formatMoney(finalAmount);
+  if (subtotalPrice) subtotalPrice.textContent = formatMoney(0);
+  if (finalPrice) finalPrice.textContent = formatMoney(0);
+
+  const container = document.querySelector(".cart-items-list");
+  if (container) {
+    container.innerHTML =
+      '<p style="text-align:center;color:var(--text-secondary);padding:2rem;">سبد خرید شما خالی است.</p>';
   }
 
   const showMessage = (message, type) => {
@@ -43,16 +33,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!messageEl) {
       messageEl = document.createElement("p");
       messageEl.className = "checkout-message";
-      discountInput.closest(".form-group").after(messageEl);
+      discountInput?.closest(".form-group")?.after(messageEl);
     }
     messageEl.textContent = message;
     messageEl.dataset.type = type || "info";
   };
-
-  sessionStorage.setItem(
-    "benamacademyCheckout",
-    JSON.stringify({ total: CHECKOUT_TOTAL, finalAmount }),
-  );
 
   discountButton?.addEventListener("click", async () => {
     const code = discountInput.value.trim();
@@ -64,19 +49,11 @@ document.addEventListener("DOMContentLoaded", () => {
     discountButton.disabled = true;
     try {
       const result = await appApi.commerce.validateCoupon({ code });
-      const discount = Math.round((CHECKOUT_TOTAL * result.percent) / 100);
-      finalAmount = CHECKOUT_TOTAL - discount;
+      const discount = Math.round((0 * result.percent) / 100);
+      finalAmount = 0 - discount;
       discountRow.hidden = false;
       discountAmount.textContent = formatMoney(discount);
       finalPrice.textContent = formatMoney(finalAmount);
-      sessionStorage.setItem(
-        "benamacademyCheckout",
-        JSON.stringify({
-          total: CHECKOUT_TOTAL,
-          finalAmount,
-          code: result.code,
-        }),
-      );
       showMessage(result.message, "success");
     } catch (error) {
       showMessage(error.message, "error");
@@ -100,84 +77,46 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // Save buyer info to retrieve on receipt page
-      localStorage.setItem("benamacademyBuyerName", name);
-      localStorage.setItem("benamacademyBuyerPhone", phone);
-      localStorage.setItem("benamacademyBuyerEmail", email);
+      // Carry the buyer forward so the payment call can record a complete order.
+      const checkout = {
+        total: 0,
+        finalAmount: 0,
+        buyer: { name, phone, email },
+        items: [],
+      };
 
-      // Carry the buyer and the cart forward so the payment call can record a
-      // complete order - including when the payment fails and there is no
-      // receipt page to pick up the pieces.
-      let cart = [];
-      try {
-        cart = JSON.parse(localStorage.getItem("benamacademyCart") || "[]");
-      } catch (error) {
-        cart = [];
-      }
-
-      let checkout = {};
-      try {
-        checkout = JSON.parse(
-          sessionStorage.getItem("benamacademyCheckout") || "{}",
-        );
-      } catch (error) {
-        checkout = {};
-      }
-
-      sessionStorage.setItem(
-        "benamacademyCheckout",
-        JSON.stringify({
-          ...checkout,
-          buyer: { name, phone, email },
-          // qty was dropped here, so a basket of two copies was recorded as
-          // one: the bestsellers report under-counted and the line items no
-          // longer added up to the amount charged.
-          items: Array.isArray(cart)
-            ? cart.map((i) => ({
-                id: i.id,
-                name: i.name,
-                price: Number(i.price) || 0,
-                qty: Number(i.qty) > 0 ? Number(i.qty) : 1,
-              }))
-            : [],
-        }),
-      );
-
-      // Redirect to Gateway
+      // Redirect to Gateway — the gateway calls appApi.commerce.createPayment.
       window.location.href = "gateway.html";
     });
   }
-});
 
-function renderCheckoutItems() {
-  const container = document.querySelector(".cart-items-list");
-  if (!container) return;
-
-  let cart = [];
-  try {
-    cart = JSON.parse(localStorage.getItem("benamacademyCart") || "[]");
-  } catch (error) {
-    cart = [];
+  function renderCheckoutItems() {
+    const container = document.querySelector(".cart-items-list");
+    if (!container) return;
+    container.replaceChildren();
+    if (!cart.length) {
+      container.innerHTML =
+        '<p style="text-align:center;color:var(--text-secondary);padding:2rem;">سبد خرید شما خالی است.</p>';
+      return;
+    }
+    cart.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "cart-item";
+      const image = document.createElement("img");
+      image.src = item.img || "../images/ravin.png";
+      image.alt = item.name || "محصول";
+      const info = document.createElement("div");
+      info.className = "cart-item-info";
+      const title = document.createElement("h4");
+      title.textContent = item.name || "محصول بدون نام";
+      const price = document.createElement("p");
+      price.className = "price";
+      price.textContent = `${Number(item.price || 0).toLocaleString("fa-IR")} تومان (تعداد: ${item.qty || 1})`;
+      info.append(title, price);
+      row.append(image, info);
+      container.appendChild(row);
+    });
   }
 
-  if (!Array.isArray(cart) || !cart.length) return;
-
-  container.replaceChildren();
-  cart.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "cart-item";
-    const image = document.createElement("img");
-    image.src = item.img || "../images/ravin.png";
-    image.alt = item.name || "محصول";
-    const info = document.createElement("div");
-    info.className = "cart-item-info";
-    const title = document.createElement("h4");
-    title.textContent = item.name || "محصول بدون نام";
-    const price = document.createElement("p");
-    price.className = "price";
-    price.textContent = `${Number(item.price || 0).toLocaleString("fa-IR")} تومان (تعداد: ${item.qty || 1})`;
-    info.append(title, price);
-    row.append(image, info);
-    container.appendChild(row);
-  });
-}
+  renderCheckoutItems();
+});

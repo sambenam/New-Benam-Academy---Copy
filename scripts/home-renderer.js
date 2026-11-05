@@ -27,23 +27,8 @@
     return "../images/ravin.png";
   }
 
-  // Load added items to identify custom items
-  const addedItemsRaw = localStorage.getItem("benamacademyAddedItems");
+  // No localStorage: added items come from the backend via appApi.
   const addedIds = [];
-  if (addedItemsRaw) {
-    try {
-      const parsed = JSON.parse(addedItemsRaw);
-      if (Array.isArray(parsed)) {
-        parsed.forEach(function (item) {
-          if (item && item.id) {
-            addedIds.push(item.id);
-          }
-        });
-      }
-    } catch (e) {
-      console.warn("home-renderer: خطا در خواندن added items", e);
-    }
-  }
 
   /**
    * The items one home section should render.

@@ -5,6 +5,7 @@
    The backend owns the conversation, AI provider credentials and any human
    hand-off. If that endpoint is explicitly unavailable, the question is filed
    through the existing support inbox instead of receiving a fake AI answer.
+   Sessions come only from the backend (appApi.auth.*); no localStorage.
    ========================================================================== */
 
 const widget = document.getElementById("aiWidget");
@@ -17,13 +18,14 @@ let aiConversationId = null;
 let aiConversationOwner = null;
 
 /** Return a signed-in user only when the session has a usable identity. */
-function aiCurrentUser() {
+async function aiCurrentUser() {
   try {
-    const raw = localStorage.getItem("benamacademySession");
-    if (!raw) return null;
-    const session = JSON.parse(raw);
+    if (typeof appApi === "undefined" || !appApi.auth || !appApi.auth.me)
+      return null;
+    const session = await appApi.auth.me();
     const user = session && session.user;
-    const hasIdentity = user && (String(user.id || "").trim() || String(user.email || "").trim());
+    const hasIdentity =
+      user && (String(user.id || "").trim() || String(user.email || "").trim());
     return session && session.token && hasIdentity ? user : null;
   } catch (error) {
     return null;
@@ -67,9 +69,9 @@ function addMessage(text, who = "bot", extraClass = "") {
   return div;
 }
 
-function refreshAiGate() {
+async function refreshAiGate() {
   if (!inputEl || !sendBtn || !messagesEl) return;
-  const user = aiCurrentUser();
+  const user = await aiCurrentUser();
   const locked = !user;
 
   inputEl.disabled = locked;
@@ -107,7 +109,11 @@ function isAssistantEndpointUnavailable(error) {
 }
 
 async function sendToHumanSupport(question, user) {
-  if (typeof appApi === "undefined" || !appApi.support || typeof appApi.support.sendMessage !== "function") {
+  if (
+    typeof appApi === "undefined" ||
+    !appApi.support ||
+    typeof appApi.support.sendMessage !== "function"
+  ) {
     throw new Error("سرویس پشتیبانی در دسترس نیست.");
   }
 
@@ -120,7 +126,8 @@ async function sendToHumanSupport(question, user) {
   });
 
   return {
-    answer: "دستیار خودکار فعلاً در دسترس نیست. پرسش شما برای پاسخ‌گویی کارشناسان ثبت شد؛ پاسخ را در بخش «پیام‌های من» ببینید.",
+    answer:
+      "دستیار خودکار فعلاً در دسترس نیست. پرسش شما برای پاسخ‌گویی کارشناسان ثبت شد؛ پاسخ را در بخش «پیام‌های من» ببینید.",
     needsHuman: true,
   };
 }
@@ -132,7 +139,8 @@ async function askAssistant(question, user) {
     aiConversationId = null;
   }
 
-  const assistantApi = typeof appApi !== "undefined" && appApi.assistant;
+  const assistantApi =
+    typeof appApi !== "undefined" && appApi.assistant;
   if (!assistantApi || typeof assistantApi.chat !== "function") {
     return sendToHumanSupport(question, user);
   }
@@ -150,16 +158,22 @@ async function askAssistant(question, user) {
     throw error;
   }
 
-  if (result && typeof result.conversationId === "string" && result.conversationId.trim()) {
+  if (
+    result &&
+    typeof result.conversationId === "string" &&
+    result.conversationId.trim()
+  ) {
     aiConversationId = result.conversationId;
   }
 
-  const answer = result && typeof result.answer === "string" ? result.answer.trim() : "";
+  const answer =
+    result && typeof result.answer === "string" ? result.answer.trim() : "";
   if (answer) return result;
   if (result && result.needsHuman === true) {
     return {
       ...result,
-      answer: "پرسش شما برای پاسخ‌گویی کارشناسان ارجاع شد؛ نتیجه را در بخش «پیام‌های من» ببینید.",
+      answer:
+        "پرسش شما برای پاسخ‌گویی کارشناسان ارجاع شد؛ نتیجه را در بخش «پیام‌های من» ببینید.",
     };
   }
   throw new Error("پاسخ معتبری از دستیار دریافت نشد.");
@@ -170,7 +184,7 @@ async function sendMessage() {
   const text = inputEl.value.trim();
   if (!text) return;
 
-  const user = aiCurrentUser();
+  const user = await aiCurrentUser();
   if (!user) {
     refreshAiGate();
     return;
@@ -206,12 +220,13 @@ if (inputEl) {
   });
 }
 
-document.addEventListener("click", (event) => {
-  const suggestion = event.target && typeof event.target.closest === "function"
-    ? event.target.closest(".ai-suggestion")
-    : null;
+document.addEventListener("click", async (event) => {
+  const suggestion =
+    event.target && typeof event.target.closest === "function"
+      ? event.target.closest(".ai-suggestion")
+      : null;
   if (!suggestion) return;
-  if (!aiCurrentUser()) {
+  if (!(await aiCurrentUser())) {
     openChat();
     refreshAiGate();
     return;
@@ -221,9 +236,6 @@ document.addEventListener("click", (event) => {
   sendMessage();
 });
 
-window.addEventListener("storage", (event) => {
-  if (event.key === "benamacademySession") refreshAiGate();
-});
 window.addEventListener("focus", refreshAiGate);
 
 if (toggleBtn) {

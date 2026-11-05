@@ -170,25 +170,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // Fill in the name and email for someone who is already signed in. Retyping
   // details the site already knows is busywork, and a typo in the email is
   // what breaks the link between a message and the account that sent it.
-  const contactSession = (function () {
-    try {
-      const raw = localStorage.getItem("benamacademySession");
-      const parsed = raw ? JSON.parse(raw) : null;
-      return parsed && parsed.user ? parsed.user : null;
-    } catch (error) {
-      return null;
-    }
-  })();
-
-  if (contactSession) {
-    const nameField = document.getElementById("name");
-    const emailField = document.getElementById("email");
-    if (nameField && !nameField.value)
-      nameField.value = contactSession.name || "";
-    if (emailField && !emailField.value)
-      emailField.value = contactSession.email || "";
-  }
-
   const contactForm = document.getElementById("contactForm");
   if (contactForm) {
     const showMessage = (message, type) => {
@@ -246,22 +227,6 @@ document.addEventListener("DOMContentLoaded", () => {
 document.addEventListener("DOMContentLoaded", function () {
   const form = document.getElementById("reportAbuseForm");
   if (!form) return;
-
-  // Prefill for a signed-in visitor, same as the contact form.
-  let session = null;
-  try {
-    const raw = localStorage.getItem("benamacademySession");
-    const parsed = raw ? JSON.parse(raw) : null;
-    session = parsed && parsed.user ? parsed.user : null;
-  } catch (error) {
-    session = null;
-  }
-  if (session) {
-    const nameField = document.getElementById("reportName");
-    const emailField = document.getElementById("reportEmail");
-    if (nameField && !nameField.value) nameField.value = session.name || "";
-    if (emailField && !emailField.value) emailField.value = session.email || "";
-  }
 
   const showMessage = (message, type) => {
     let el = form.querySelector(".form-message");

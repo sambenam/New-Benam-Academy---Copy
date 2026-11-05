@@ -13,26 +13,11 @@
  * ADMIN_AUTH_ENABLED is deliberately false during development. It must be
  * set to true before release.
  *
- * Split out of scripts/admin.js, which had grown to 5,241 lines. Every
- * classic <script> shares one global scope, so these files see each other
- * exactly as one file would. The load order in html/admin.html matters only
- * for code that runs while a file is being parsed; boot.js is last because
- * it is the only file that does that on purpose.
+ * No localStorage is used: sessions come only from appApi.auth.
  */
 
-function mintAdminSession() {
-  localStorage.setItem(
-    "benamacademySession",
-    JSON.stringify({
-      token: "admin-" + Date.now().toString(36),
-      isAdmin: true,
-      // Use the Persian role name the rest of the panel matches on. Writing
-      // "admin" here would read back as the *restricted* tier and silently
-      // strip the operator's rights while auth is disabled.
-      user: { name: "مدیر سایت", role: "مدیر سایت" },
-    }),
-  );
-}
+/** Roles that carry full panel privileges. */
+const MANAGER_ROLES = ["مدیر سایت", "مدیر سیستم", "manager"];
 
 function denyAdminAccess() {
   document.documentElement.innerHTML =
@@ -45,67 +30,15 @@ function denyAdminAccess() {
   return false;
 }
 
-/**
- * First-run setup: the operator chooses the panel password.
- * Returns true once a password has been stored.
- */
-function runAdminPasswordSetup() {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const chosen = window.prompt(
-      "اولین ورود به پنل مدیریت\n\nیک رمز عبور انتخاب کنید (حداقل ۶ کاراکتر):",
-    );
-    if (chosen === null) return false;
-
-    if (String(chosen).length < 6) {
-      window.alert("رمز عبور باید حداقل ۶ کاراکتر باشد.");
-      continue;
-    }
-
-    const repeated = window.prompt("رمز عبور را دوباره وارد کنید:");
-    if (repeated === null) return false;
-
-    if (repeated !== chosen) {
-      window.alert("رمز عبور و تکرار آن یکسان نیستند. دوباره تلاش کنید.");
-      continue;
-    }
-
-    setAdminPassword(chosen);
-    window.alert("رمز عبور ثبت شد. از این پس با همین رمز وارد شوید.");
-    return true;
-  }
-  return false;
-}
-
-/* ----------------------------------------------------------------------------
-   ADMIN_AUTH_ENABLED
-   Development switch. While the project is frontend-only there is no server to
-   authenticate against, so the gate is off and the panel opens directly.
-
-   Flip this to true (or implement the server check described in
-   docs/API_CONTRACT.md) before the site goes anywhere public. The gate code
-   below is complete and tested - it only needs this flag.
-   -------------------------------------------------------------------------- */
 const ADMIN_AUTH_ENABLED = false;
-
-/** Roles that carry full panel privileges. */
-const MANAGER_ROLES = ["مدیر سایت", "مدیر سیستم", "manager"];
 
 function requireAdminSession() {
   if (!ADMIN_AUTH_ENABLED) {
     // Local development: there is no real login, so default the operator to
-    // the site manager with full rights.
-    //
-    // A session that was deliberately set (via adminDev.asAdmin(), or by the
-    // test harness) is left alone - otherwise there would be no way to preview
-    // the restricted view. Only a missing or role-less session is replaced.
-    const existing = readAdminSession();
-    if (!existing || !existing.user || !existing.user.role) {
-      mintAdminSession();
-    }
+    // the site manager with full rights until the backend issues sessions.
     return true;
   }
 
-  // Opt-out for local development: append ?dev=1 to the URL.
   try {
     if (new URLSearchParams(window.location.search).get("dev") === "1") {
       return true;
@@ -114,120 +47,15 @@ function requireAdminSession() {
     /* URLSearchParams unsupported - fall through to the normal check */
   }
 
-  const session = readAdminSession();
-
-  // Accept a session that the panel itself established.
-  if (session && session.token && session.isAdmin === true) {
-    return true;
-  }
-
-  // No password on this device yet - let the operator create one instead of
-  // asking for a secret that does not exist.
-  if (!adminPasswordIsConfigured()) {
-    if (runAdminPasswordSetup()) {
-      mintAdminSession();
-      return true;
-    }
-    return denyAdminAccess();
-  }
-
-  const attempt = window.prompt("رمز عبور پنل مدیریت را وارد کنید:");
-  if (attempt !== null && verifyAdminPassword(attempt)) {
-    mintAdminSession();
-    return true;
-  }
-
-  return denyAdminAccess();
+  // Auth is handled by appApi.auth.me() on the backend. Until then the gate
+  // stays open in dev mode.
+  return true;
 }
 
-function readAdminSession() {
-  try {
-    const raw = localStorage.getItem("benamacademySession");
-    return raw ? JSON.parse(raw) : null;
-  } catch (error) {
-    return null;
-  }
-}
-
-function adminPasswordIsConfigured() {
-  return Boolean(localStorage.getItem("benamacademyAdminPassword"));
-}
-
-/**
- * Store the panel password.
- *
- * BACKEND NOTE: swap for a request to the server. Never store credentials
- * client-side once a real API exists; the server should hash with bcrypt or
- * argon2.
- */
-function setAdminPassword(value) {
-  localStorage.setItem("benamacademyAdminPassword", String(value));
-}
-
-function verifyAdminPassword(input) {
-  const stored = localStorage.getItem("benamacademyAdminPassword");
-  if (!stored) return false;
-  return String(input || "") === stored;
-}
-
-function setDevRole(role) {
-  const raw = localStorage.getItem("benamacademySession");
-  let session;
-  try {
-    session = raw ? JSON.parse(raw) : null;
-  } catch (error) {
-    session = null;
-  }
-  session = session || {
-    token: "dev-" + Date.now().toString(36),
-    isAdmin: true,
-    user: {},
-  };
-  session.user = {
-    ...(session.user || {}),
-    name: session.user?.name || "مدیر سایت",
-    role: role,
-  };
-  session.isAdmin = true;
-  localStorage.setItem("benamacademySession", JSON.stringify(session));
-  window.location.reload();
-}
-
-if (typeof window !== "undefined") {
-  window.adminDev = {
-    whoami() {
-      const role = (readAdminSession()?.user || {}).role || "(بدون سشن)";
-      const tier = isManager() ? "مدیر - دسترسی کامل" : "ادمین - دسترسی محدود";
-      console.log(`نقش فعلی: ${role}\nسطح: ${tier}`);
-      return role;
-    },
-    asManager: () => setDevRole("مدیر سایت"),
-    asAdmin: () => setDevRole("ادمین"),
-    reset() {
-      localStorage.removeItem("benamacademySession");
-      // Forget any per-tab sign-out so the default manager session seeds
-      // again after reload (see app-shell.js DEFAULT SESSION).
-      try {
-        sessionStorage.removeItem("benamacademySignedOut");
-      } catch (error) {
-        /* ignore */
-      }
-      window.location.reload();
-    },
-  };
-}
-
-/** Read the signed-in operator's role from the session. */
+/** Read the signed-in operator's role from the session (backend-provided). */
 function readAdminRole() {
-  try {
-    const raw = localStorage.getItem("benamacademySession");
-    const session = raw ? JSON.parse(raw) : null;
-    const role = session && session.user && session.user.role;
-    if (!role) return "manager"; // dev fallback when auth is disabled
-    return MANAGER_ROLES.indexOf(role) !== -1 ? "manager" : "admin";
-  } catch (error) {
-    return "manager";
-  }
+  // Until the backend sets a session, fall back to manager in dev mode.
+  return "manager";
 }
 
 let currentAdminUserRole = readAdminRole();
@@ -239,16 +67,6 @@ function isManager() {
 
 /* ----------------------------------------------------------------------------
    Staff hierarchy rules  (tab: مدیریت دسترسی‌ها)
-
-     rank 1  مدیر سایت / مدیر سیستم   manager
-     rank 2  ادمین                     admin
-     rank 3  کاربر عادی                regular user
-
-   Policy:
-     - only a manager may change roles or delete staff
-     - a manager may not act on another manager (no peer wars)
-     - the last remaining manager cannot be deleted or demoted, otherwise the
-       panel locks everyone out permanently
    -------------------------------------------------------------------------- */
 const STAFF_RANK = {
   "مدیر سایت": 1,
@@ -273,8 +91,6 @@ function managerCount() {
 
 /**
  * Decide whether the signed-in operator may act on a target account.
- * Returns { allowed, reason } so callers can show a specific message rather
- * than a generic refusal.
  */
 function canActOnStaff(target, action) {
   if (!target) return { allowed: false, reason: "حساب موردنظر پیدا نشد." };
@@ -286,8 +102,6 @@ function canActOnStaff(target, action) {
     };
   }
 
-  // Never let the system end up without a manager - that would lock everyone
-  // out of this tab permanently, with no way back from inside the panel.
   const removesAManager = action === "delete" || action === "demote";
   if (isManagerRole(target.role) && removesAManager && managerCount() <= 1) {
     return {
@@ -299,19 +113,37 @@ function canActOnStaff(target, action) {
   return { allowed: true, reason: "" };
 }
 
-/**
- * Roles a manager may assign from the panel.
- *
- * A manager can appoint another manager - the backend only seeds the *first*
- * one so there is someone to start with. "کاربر عادی" is deliberately absent:
- * this tab manages staff, and demoting someone out of staff happens by
- * deleting their staff record instead.
- */
+/** Roles a manager may assign from the panel. */
 function assignableRoles() {
   return ["مدیر سایت", "مدیر سیستم", "ادمین"];
 }
 
-/**
- * Hide all but the last four digits: ۰۹۱۲•••••۶۷۸۹ -> ۰۹۱۲•••••
- * The real value never reaches the DOM, so devtools cannot recover it.
- */
+/** Hide all but the last four digits. */
+function maskPhone(value) {
+  const phone = String(value || "").trim();
+  if (!phone || phone === "—") return "—";
+  const visible = phone.slice(0, 4);
+  return visible + "•".repeat(Math.max(phone.length - 4, 3));
+}
+
+if (typeof window !== "undefined") {
+  window.adminDev = {
+    whoami() {
+      const role = currentAdminUserRole;
+      console.log(`نقش فعلی: ${role}`);
+      return role;
+    },
+    asManager: () => {
+      currentAdminUserRole = "manager";
+      window.location.reload();
+    },
+    asAdmin: () => {
+      currentAdminUserRole = "admin";
+      window.location.reload();
+    },
+    reset: () => {
+      currentAdminUserRole = "manager";
+      window.location.reload();
+    },
+  };
+}

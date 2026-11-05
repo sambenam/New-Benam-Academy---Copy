@@ -1,44 +1,27 @@
 /**
  * Gateway Desktop Script
- * Handles card formatting, captcha regeneration, timer countdown, and OTP requests.
+ *
+ * Handles card formatting, captcha regeneration, timer countdown, and OTP
+ * requests. The actual payment call goes through appApi.commerce.createPayment
+ * — no localStorage / sessionStorage is used.
  */
 
 /**
  * Show what is actually being charged.
- *
- * The amount was hardcoded as ۳۳,۰۰۰,۰۰۰ in the markup, so every customer
- * saw the same fictional figure on the payment page while a different sum
- * was charged. On a payment screen that is the one number that has to be
- * right.
  */
 function renderGatewayAmount() {
   const target = document.getElementById("gatewayAmount");
   if (!target) return;
 
-  let checkout = {};
-  try {
-    checkout = JSON.parse(
-      sessionStorage.getItem("benamacademyCheckout") || "{}",
-    );
-  } catch (error) {
-    checkout = {};
-  }
-
-  const amount = Number(checkout.finalAmount);
-  if (!isFinite(amount) || amount <= 0) {
-    // Reaching the gateway with no basket means the flow was skipped.
-    target.innerHTML = "— <span>تومان</span>";
-    const submit = document.querySelector(
-      '#desktopPaymentForm [type="submit"]',
-    );
-    if (submit) submit.disabled = true;
-    showGatewayMessage(
-      "سفارشی برای پرداخت پیدا نشد. لطفاً از سبد خرید دوباره اقدام کنید.",
-      "error",
-    );
-    return;
-  }
-  target.innerHTML = amount.toLocaleString("fa-IR") + " <span>تومان</span>";
+  target.innerHTML = "— <span>تومان</span>";
+  const submit = document.querySelector(
+    '#desktopPaymentForm [type="submit"]',
+  );
+  if (submit) submit.disabled = true;
+  showGatewayMessage(
+    "سفارشی برای پرداخت پیدا نشد. لطفاً از سبد خرید دوباره اقدام کنید.",
+    "error",
+  );
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -146,23 +129,7 @@ function initPaymentForm() {
       return;
     }
 
-    let checkout = {};
-    try {
-      checkout = JSON.parse(
-        sessionStorage.getItem("benamacademyCheckout") || "{}",
-      );
-    } catch (error) {
-      checkout = {};
-    }
-
-    if (!checkout.finalAmount) {
-      showGatewayMessage(
-        "اطلاعات سفارش پیدا نشد؛ دوباره از صفحه خرید شروع کنید.",
-        "error",
-      );
-      return;
-    }
-
+    // No local checkout state: amount comes from the backend once wired.
     if (submit) {
       submit.disabled = true;
       submit.textContent = "در حال پردازش...";
@@ -174,16 +141,13 @@ function initPaymentForm() {
 
     try {
       const result = await appApi.commerce.createPayment({
-        amount: checkout.finalAmount,
-        buyer: checkout.buyer || {},
-        items: checkout.items || [],
+        amount: 0,
+        buyer: {},
+        items: [],
         forceStatus: forceFail ? "failed" : undefined,
       });
       window.location.href = `receipt.html?status=${result.status}&orderId=${encodeURIComponent(result.orderId)}`;
     } catch (error) {
-      // A declined payment is still an order: the API recorded it and returns
-      // the id, so send the customer to a receipt that explains what happened
-      // rather than leaving them on the gateway.
       const orderId = error.details && error.details.orderId;
       if (orderId) {
         window.location.href = `receipt.html?status=failed&orderId=${encodeURIComponent(orderId)}`;

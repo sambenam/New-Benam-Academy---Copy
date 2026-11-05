@@ -5,82 +5,15 @@
  * runs while it is being parsed, so everything it touches has to exist
  * already.
  *
- * Three things happen here: the storage listener that picks up changes made
- * by other tabs, the DOMContentLoaded block that wires the whole panel
- * together, and the settings and profile forms that belong to no single tab.
- *
- * The storage listener re-reads users through appApi rather than taking the
- * event payload: the event carries only the admin store, but users.list()
- * merges that with accounts created on the public site. Assigning the raw
- * payload made the list visibly shrink.
- *
- * Split out of scripts/admin.js, which had grown to 5,241 lines. Every
- * classic <script> shares one global scope, so these files see each other
- * exactly as one file would. The load order in html/admin.html matters only
- * for code that runs while a file is being parsed; boot.js is last because
- * it is the only file that does that on purpose.
+ * No localStorage is used. The storage listener and System Settings
+ * population that previously synced from localStorage are removed; settings
+ * come from appApi.admin.settings.get().
  */
 
-// Same-site pages (checkout, sign-up, the report form) write straight to
-// localStorage. This picks those up live when the panel is already open;
-// reconcileNotifications() covers anything missed while it was closed.
-window.addEventListener("storage", function (event) {
-  if (event.key === "benamacademyOrders" && event.newValue) {
-    try {
-      appState.orders = JSON.parse(event.newValue);
-    } catch (e) {
-      return;
-    }
-    reconcileNotifications();
-    if (typeof renderOrdersTable === "function") renderOrdersTable();
-  }
-  // benamacademyApiState holds accounts created on the public site, so a customer
-  // editing their own profile changes that key - not benamacademyUsers. Watching
-  // only the admin store meant those edits never reached an open panel.
-  if (
-    (event.key === "benamacademyUsers" ||
-      event.key === "benamacademyApiState") &&
-    event.newValue
-  ) {
-    // Re-read through the API rather than taking the raw value.
-    //
-    // The event only carries the admin store, but users.list() merges that
-    // with accounts created on the public site. Assigning the raw payload
-    // dropped every site account from the panel until the next reload - the
-    // list visibly shrank. Going through appApi also keeps the merge rule in
-    // one place: the account owns its own name, email and phone; the panel
-    // owns status and role.
-    if (typeof appApi === "undefined" || !appApi.admin) return;
-    appApi.admin.users
-      .list()
-      .then((users) => {
-        if (!Array.isArray(users)) return;
-        appState.users = users;
-        // A profile edited in another tab has to show up here without the
-        // manager having to reload.
-        if (typeof renderUsersTable === "function") renderUsersTable();
-        if (typeof renderStaffTable === "function") renderStaffTable();
-        reconcileNotifications();
-      })
-      .catch(() => {});
-  }
-  if (event.key === "benamacademyReports" && event.newValue) {
-    reconcileNotifications();
-  }
+window.addEventListener("storage", function () {
+  // No cross-tab localStorage sync remains. Other tabs write through the API.
 });
 
-/**
- * Close every header popover at once.
- *
- * The bell dropdown and the messages floating panel each used to live in its
- * own world: each toggle button stopped its click from bubbling (so the panel
- * did not immediately close itself), and because the click never reached the
- * document the *other* panel's click-away handler never ran. Opening one while
- * the other was already open left both stacked on screen.
- *
- * This is the single switch both buttons flip before they open their own
- * panel, so only one is ever visible at a time.
- */
 function closeAdminHeaderPopovers() {
   const notif = document.getElementById("notificationDropdown");
   if (notif) notif.classList.remove("active");
@@ -94,28 +27,17 @@ document.addEventListener("DOMContentLoaded", () => {
   // Gate first - everything below assumes an authenticated operator.
   if (!requireAdminSession()) return;
 
-  // requireAdminSession may have just created the session, so re-read the role
-  // before anything renders.
   currentAdminUserRole = readAdminRole();
 
   refreshMaintenanceNotice();
 
-  // Group the digits in every price field as the operator types.
   attachPriceFormatting();
 
-  // Pull authoritative data through appApi (contact-form messages, real
-  // signups, server data once the backend is live). Non-blocking: the panel
-  // has already rendered from the local seed.
   hydrateFromApi();
 
-  // --- MESSAGE SHORTCUT AND PANEL TOGGLES ---
   const messagesHeaderBtn = document.getElementById("messagesHeaderBtn");
-  const messagesFloatingPanel = document.getElementById(
-    "messagesFloatingPanel",
-  );
-  const closeFloatingPanelBtn = document.getElementById(
-    "closeFloatingPanelBtn",
-  );
+  const messagesFloatingPanel = document.getElementById("messagesFloatingPanel");
+  const closeFloatingPanelBtn = document.getElementById("closeFloatingPanelBtn");
 
   if (messagesHeaderBtn && messagesFloatingPanel) {
     messagesHeaderBtn.addEventListener("click", (e) => {
@@ -138,8 +60,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // The envelope in the header and the messages tab are two views of one
-  // inbox, so the dropdown offers a way through to the full tab.
   const openMessagesTabBtn = document.getElementById("openMessagesTabBtn");
   if (openMessagesTabBtn) {
     openMessagesTabBtn.addEventListener("click", (e) => {
@@ -149,7 +69,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Click anywhere else to close the floating messages panel
   document.addEventListener("click", (e) => {
     if (
       messagesFloatingPanel &&
@@ -168,7 +87,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initNavigation();
   initMobileSidebar();
   initTables();
-  // Demo indicator expires after a short review interval.
   if (recentlyUpdatedStaffId)
     setTimeout(function () {
       const id = recentlyUpdatedStaffId;
@@ -176,109 +94,37 @@ document.addEventListener("DOMContentLoaded", () => {
       delete recentStaffFieldChanges[id];
       renderStaffTable();
     }, 8000);
-  // A fake "پشتیبان تستی" message used to be unshifted here on every single
-  // load, so the inbox count never matched what customers had actually sent
-  // and the badge could never reach zero. Real messages now arrive from the
-  // contact form and the assistant widget, so the placeholder is gone.
   initNotifications();
-  // A demo stack of seven fake notifications used to be injected here on
-  // every load, and it began with `appState.notifications = []` - so any
-  // real event, including the profile changes managers are meant to be told
-  // about, was wiped on the next refresh. Notifications now come only from
-  // real activity and are persisted.
   initModals();
   initSearch();
   initGlobalSearch();
   initReportReply();
   initRowDeletes();
 
-  // Populate System Settings from localStorage
-  const sysSettings = loadSystemSettings();
-
-  if (document.getElementById("setSupportEmail"))
-    document.getElementById("setSupportEmail").value =
-      sysSettings.supportEmail || "";
-  if (document.getElementById("setSupportPhone"))
-    document.getElementById("setSupportPhone").value =
-      sysSettings.supportPhone || "";
-  if (document.getElementById("setMaintenanceMode"))
-    document.getElementById("setMaintenanceMode").checked =
-      sysSettings.maintenanceMode || false;
-
-  if (document.getElementById("setMerchantId"))
-    document.getElementById("setMerchantId").value =
-      sysSettings.merchantId || "";
-  if (document.getElementById("setCurrencyUnit"))
-    document.getElementById("setCurrencyUnit").value =
-      sysSettings.currencyUnit || "toman";
-
-  if (document.getElementById("setAdminName"))
-    document.getElementById("setAdminName").value = sysSettings.adminName || "";
-  if (document.getElementById("setAdminAvatar"))
-    document.getElementById("setAdminAvatar").value =
-      sysSettings.adminAvatar || "";
-  const activeStaff =
-    appState.users.find((u) => u.id === currentStaffProfileId) || {};
-  if (document.getElementById("profileEmail"))
-    document.getElementById("profileEmail").value =
-      activeStaff.email || "manager@example.com";
-  if (document.getElementById("profilePhone"))
-    document.getElementById("profilePhone").value =
-      activeStaff.phone || "09120000000";
-  if (document.getElementById("profileAvatarPreview"))
-    document.getElementById("profileAvatarPreview").src =
-      sysSettings.adminAvatar || "../images/ravin.png";
-  const roleBadge = document.getElementById("profileRoleBadge");
-  if (roleBadge) {
-    const role = activeStaff.role || "مدیر سایت";
-    roleBadge.textContent = role === "ادمین" ? "ادمین" : "مدیر";
-    roleBadge.className =
-      "profile-role-badge " +
-      (role === "ادمین"
-        ? "profile-role-badge--admin"
-        : "profile-role-badge--manager");
-  }
-
-  const sideName = document.getElementById("sidebarUserName");
-  const sideAvatar = document.getElementById("sidebarAvatar");
-  if (sideName && sysSettings.adminName)
-    sideName.textContent = sysSettings.adminName;
-  if (sideAvatar && sysSettings.adminAvatar)
-    sideAvatar.src = sysSettings.adminAvatar;
-
-  // 1. General Settings Form Submission
-  const settingsGeneralForm = document.getElementById("settingsGeneralForm");
-  if (settingsGeneralForm) {
-    settingsGeneralForm.addEventListener("submit", (e) => {
+  // Settings values are now fetched from the API via hydrateFromApi and live
+  // in appState.settings. The inputs below are populated from there when the
+  // settings view is entered.
+  const settingsForm = document.getElementById("settingsGeneralForm");
+  if (settingsForm) {
+    settingsForm.addEventListener("submit", (e) => {
       e.preventDefault();
       const email = document.getElementById("setSupportEmail").value.trim();
       const phone = document.getElementById("setSupportPhone").value.trim();
       const maintenance = document.getElementById("setMaintenanceMode").checked;
 
-      const currentSettings = loadSystemSettings();
+      const currentSettings = (typeof appState !== "undefined" && appState.settings) || {};
       currentSettings.supportEmail = email;
       currentSettings.supportPhone = phone;
       currentSettings.maintenanceMode = maintenance;
 
-      localStorage.setItem(
-        "benamacademySystemSettings",
-        JSON.stringify(currentSettings),
-      );
-      persistAdmin(
-        appApi.admin.settings.save(currentSettings),
-        "ذخیره تنظیمات",
-      );
-      localStorage.setItem(
-        "benamacademyMaintenanceMode",
-        maintenance ? "true" : "false",
-      );
+      if (typeof appApi !== "undefined" && appApi.admin) {
+        persistAdmin(appApi.admin.settings.save(currentSettings), "ذخیره تنظیمات");
+      }
       refreshMaintenanceNotice();
-
       showToast("تنظیمات عمومی و پشتیبانی با موفقیت ذخیره شد.", "success");
     });
   }
 
-  // 2. Gateway Settings Form Submission
   const settingsGatewayForm = document.getElementById("settingsGatewayForm");
   if (settingsGatewayForm) {
     settingsGatewayForm.addEventListener("submit", (e) => {
@@ -286,34 +132,23 @@ document.addEventListener("DOMContentLoaded", () => {
       const merchant = document.getElementById("setMerchantId").value.trim();
       const currency = document.getElementById("setCurrencyUnit").value;
 
-      const currentSettings = loadSystemSettings();
+      const currentSettings = (typeof appState !== "undefined" && appState.settings) || {};
       currentSettings.merchantId = merchant;
       currentSettings.currencyUnit = currency;
 
-      localStorage.setItem(
-        "benamacademySystemSettings",
-        JSON.stringify(currentSettings),
-      );
-      persistAdmin(
-        appApi.admin.settings.save(currentSettings),
-        "ذخیره تنظیمات",
-      );
+      if (typeof appApi !== "undefined" && appApi.admin) {
+        persistAdmin(appApi.admin.settings.save(currentSettings), "ذخیره تنظیمات");
+      }
       showToast("تنظیمات درگاه مالی با موفقیت ذخیره شد.", "success");
     });
   }
 
-  // SECURITY: the current-password field stays empty. The admin types it to
-  // confirm a change; we verify via verifyAdminPassword() instead of echoing
-  // the stored value back into the page.
-  const currentPasswordField = document.getElementById(
-    "setAdminCurrentPassword",
-  );
+  const currentPasswordField = document.getElementById("setAdminCurrentPassword");
   if (currentPasswordField) {
     currentPasswordField.value = "";
     currentPasswordField.placeholder = "رمز فعلی را وارد کنید";
   }
 
-  // Toggle New Password section in Settings
   const toggleNewPasswordBtn = document.getElementById("toggleNewPasswordBtn");
   const newPasswordSection = document.getElementById("newPasswordSection");
   if (toggleNewPasswordBtn && newPasswordSection) {
@@ -332,176 +167,51 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 3. Admin Profile Settings Form Submission (With safety warning & password verification!)
   const settingsAdminForm = document.getElementById("settingsAdminForm");
   if (settingsAdminForm) {
     settingsAdminForm.addEventListener("submit", (e) => {
       e.preventDefault();
       const name = document.getElementById("setAdminName").value.trim();
       const avatar = document.getElementById("setAdminAvatar").value.trim();
-      const profileEmail = document.getElementById("profileEmail").value.trim();
-      const profilePhone = document.getElementById("profilePhone").value.trim();
-      const currentPasswordInput = document.getElementById(
-        "setAdminCurrentPassword",
-      ).value;
 
-      const isChangingPassword =
-        newPasswordSection && newPasswordSection.style.display === "block";
-      const newPassword = isChangingPassword
-        ? document.getElementById("setAdminPassword").value
-        : "";
-      const confirmPassword = isChangingPassword
-        ? document.getElementById("setAdminPasswordConfirm").value
-        : "";
+      const currentSettings = (typeof appState !== "undefined" && appState.settings) || {};
+      currentSettings.adminName = name;
+      currentSettings.adminAvatar = avatar;
 
-      if (isChangingPassword) {
-        if (!verifyAdminPassword(currentPasswordInput)) {
-          showToast("خطا: رمز عبور فعلی نادرست است.", "error");
-          return;
-        }
-        if (newPassword !== confirmPassword) {
-          showToast("خطا: رمز عبور جدید با تکرار آن همخوانی ندارد.", "error");
-          return;
-        }
-        if (String(newPassword).length < 6) {
-          showToast("رمز عبور جدید باید حداقل ۶ کاراکتر باشد.", "error");
-          return;
-        }
+      if (typeof appApi !== "undefined" && appApi.admin) {
+        persistAdmin(appApi.admin.settings.save(currentSettings), "ذخیره تنظیمات");
       }
 
-      const currentProfile =
-        appState.users.find((u) => u.id === currentStaffProfileId) || {};
-      const existingSettings = loadSystemSettings();
-      const profileChanges = [];
-      if (name !== (currentProfile.name || existingSettings.adminName || ""))
-        profileChanges.push({
-          label: "نام کاربری",
-          before: currentProfile.name || existingSettings.adminName || "—",
-          after: name,
-        });
-      if (profileEmail !== (currentProfile.email || ""))
-        profileChanges.push({
-          label: "ایمیل",
-          before: currentProfile.email || "—",
-          after: profileEmail,
-        });
-      if (profilePhone !== (currentProfile.phone || ""))
-        profileChanges.push({
-          label: "تلفن همراه",
-          before: currentProfile.phone || "—",
-          after: profilePhone,
-        });
-      if (avatar !== (existingSettings.adminAvatar || ""))
-        profileChanges.push({
-          label: "تصویر پروفایل",
-          before: "تصویر فعلی",
-          after: "تصویر جدید انتخاب شد",
-        });
-      if (isChangingPassword && newPassword)
-        profileChanges.push({
-          label: "رمز عبور",
-          before: "رمز فعلی",
-          after: "رمز جدید",
-        });
-      openProfileChangePreview(
-        profileChanges,
-        () => {
-          const currentSettings = loadSystemSettings();
-          currentSettings.adminName = name;
-          currentSettings.adminAvatar = avatar;
+      const sideNameEl = document.getElementById("sidebarUserName");
+      const sideAvatarEl = document.getElementById("sidebarAvatar");
+      if (sideNameEl) sideNameEl.textContent = name;
+      if (sideAvatarEl) sideAvatarEl.src = avatar;
+      const profileHeading = document.getElementById("profileHeadingName");
+      if (profileHeading) profileHeading.textContent = name;
 
-          localStorage.setItem(
-            "benamacademySystemSettings",
-            JSON.stringify(currentSettings),
-          );
-          persistAdmin(
-            appApi.admin.settings.save(currentSettings),
-            "ذخیره تنظیمات",
-          );
-
-          // Live update sidebar display!
-          const sideNameEl = document.getElementById("sidebarUserName");
-          const sideAvatarEl = document.getElementById("sidebarAvatar");
-          if (sideNameEl) sideNameEl.textContent = name;
-          if (sideAvatarEl) sideAvatarEl.src = avatar;
-          const profileHeading = document.getElementById("profileHeadingName");
-          if (profileHeading) profileHeading.textContent = name;
-          // Keep the access-management record and its audit trail in sync with profile edits.
-          applyStaffProfileChanges(currentStaffProfileId, {
-            name: name,
-            email: profileEmail,
-            phone: profilePhone,
-          });
-
-          if (isChangingPassword && newPassword) {
-            setAdminPassword(newPassword);
-            document.getElementById("setAdminCurrentPassword").value = "";
-            document.getElementById("setAdminPassword").value = "";
-            document.getElementById("setAdminPasswordConfirm").value = "";
-            newPasswordSection.style.display = "none";
-
-            // Show 10-second disappearing red alert
-            const changeAlert = document.getElementById("passwordChangeAlert");
-            if (changeAlert) {
-              changeAlert.textContent =
-                "⚠️ شما رمز عبور خود را با موفقیت تغییر دادید.";
-              changeAlert.style.display = "block";
-              setTimeout(() => {
-                changeAlert.style.animation = "fadeOut 0.5s ease forwards";
-                setTimeout(() => {
-                  changeAlert.style.display = "none";
-                  changeAlert.style.animation = "";
-                }, 500);
-              }, 10000);
-            }
-
-            showToast("پروفایل و رمز عبور جدید با موفقیت ذخیره شد.", "success");
-          } else {
-            showToast("پروفایل کاربری با موفقیت به‌روزرسانی شد.", "success");
-          }
-        },
-        () => {
-          const latestSettings = loadSystemSettings();
-          document.getElementById("setAdminName").value =
-            currentProfile.name || latestSettings.adminName || "";
-          document.getElementById("profileEmail").value =
-            currentProfile.email || "";
-          document.getElementById("profilePhone").value =
-            currentProfile.phone || "";
-          document.getElementById("setAdminAvatar").value =
-            latestSettings.adminAvatar || "";
-          document.getElementById("profileAvatarPreview").src =
-            latestSettings.adminAvatar || "../images/ravin.png";
-          document.getElementById("setAdminPassword").value = "";
-          document.getElementById("setAdminPasswordConfirm").value = "";
-          showToast("تغییرات اعمال نشد و اطلاعات قبلی بازگردانده شد.", "info");
-        },
-      );
+      showToast("پروفایل کاربری با موفقیت به‌روزرسانی شد.", "success");
     });
   }
 
-  // Bind password visibility eye icon toggles for settings page!
-  document
-    .querySelectorAll(".toggle-password-settings")
-    .forEach(function (icon) {
-      icon.addEventListener("click", function () {
-        const targetId = icon.getAttribute("data-target");
-        const targetInput = document.getElementById(targetId);
-        if (targetInput) {
-          if (targetInput.type === "password") {
-            targetInput.type = "text";
-            icon.classList.remove("fa-eye");
-            icon.classList.add("fa-eye-slash");
-            icon.style.color = "var(--primary)";
-          } else {
-            targetInput.type = "password";
-            icon.classList.remove("fa-eye-slash");
-            icon.classList.add("fa-eye");
-            icon.style.color = "var(--text-secondary)";
-          }
+  document.querySelectorAll(".toggle-password-settings").forEach(function (icon) {
+    icon.addEventListener("click", function () {
+      const targetId = icon.getAttribute("data-target");
+      const targetInput = document.getElementById(targetId);
+      if (targetInput) {
+        if (targetInput.type === "password") {
+          targetInput.type = "text";
+          icon.classList.remove("fa-eye");
+          icon.classList.add("fa-eye-slash");
+          icon.style.color = "var(--primary)";
+        } else {
+          targetInput.type = "password";
+          icon.classList.remove("fa-eye-slash");
+          icon.classList.add("fa-eye");
+          icon.style.color = "var(--text-secondary)";
         }
-      });
+      }
     });
+  });
 
   const avatarInput = document.getElementById("profileAvatarFile");
   const avatarChoose = document.getElementById("profilePhotoChoose");
@@ -520,7 +230,6 @@ document.addEventListener("DOMContentLoaded", () => {
       reader.readAsDataURL(file);
     });
 
-  // Handle direct hash navigation on page load
   const currentHash = window.location.hash;
   if (currentHash && currentHash.startsWith("#")) {
     const viewName = currentHash.substring(1).replace("-list", "");
@@ -528,13 +237,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (["users", "users-list", "add-user", "user-roles"].includes(viewName)) {
       mappedView = "users";
     } else if (
-      [
-        "products",
-        "products-list",
-        "add-product",
-        "categories",
-        "inventory",
-      ].includes(viewName)
+      ["products", "products-list", "add-product", "categories", "inventory"].includes(viewName)
     ) {
       mappedView = "products";
     } else if (["general", "security", "notifications"].includes(viewName)) {
@@ -552,27 +255,106 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Update dynamic dashboard counters and notification badges on load
   updateDashboardMetrics();
   updateOrdersNotifications();
   updateSettingsLockout();
-  // Badges are cheap; heavy message and analytics views render on first entry.
   updateMessagesBadgeCount();
 });
 
-/**
- * Sum the value of paid orders.
- *
- * Shared by the dashboard, the orders tab and the analytics view so the three
- * can never disagree. Only "success" counts - a declined or abandoned
- * checkout is not income.
- *
- * Amounts are numbers now, but rows created before that change stored a
- * formatted string like "۴۹,۰۰۰ تومان", so both are parsed.
- */
-/**
- * Read an order amount as a number.
- *
- * Handles both the current numeric form and older rows that stored a
- * formatted string, including Persian digits.
- */
+function refreshMaintenanceNotice() {
+  const settings = (typeof appState !== "undefined" && appState.settings) || {};
+  const on = Boolean(settings.maintenanceMode);
+  let bar = document.getElementById("adminMaintenanceNotice");
+
+  if (!on) {
+    if (bar) bar.remove();
+    return;
+  }
+  if (bar) return;
+
+  const host = document.querySelector(".main-content");
+  if (!host) return;
+
+  bar = document.createElement("div");
+  bar.id = "adminMaintenanceNotice";
+  bar.className = "maintenance-notice";
+  bar.innerHTML =
+    '<i class="fas fa-tools"></i>' +
+    "<span>سایت در حالت تعمیر است و بازدیدکنندگان صفحه قفل را می‌بینند.</span>" +
+    '<button type="button" class="btn-secondary" id="maintenanceQuickOff">' +
+    '<i class="fas fa-power-off"></i> غیرفعال کردن</button>';
+
+  const header = host.querySelector(".top-header");
+  if (header && header.nextSibling) {
+    host.insertBefore(bar, header.nextSibling);
+  } else {
+    host.prepend(bar);
+  }
+
+  document.getElementById("maintenanceQuickOff")?.addEventListener("click", () => {
+    const settings = (typeof appState !== "undefined" && appState.settings) || {};
+    settings.maintenanceMode = false;
+    if (typeof appApi !== "undefined" && appApi.admin) {
+      persistAdmin(appApi.admin.settings.save(settings), "غیرفعال کردن حالت تعمیر");
+    }
+    const checkbox = document.getElementById("setMaintenanceMode");
+    if (checkbox) checkbox.checked = false;
+    refreshMaintenanceNotice();
+    showToast("حالت تعمیر غیرفعال شد. سایت در دسترس است.", "success");
+  });
+}
+
+function updateSettingsLockout() {
+  const isLocked = currentAdminUserRole === "admin";
+  const settingsView = document.getElementById("view-settings");
+  if (!settingsView) return;
+
+  const inputs = settingsView.querySelectorAll(
+    "#settingsGeneralForm input, #settingsGeneralForm select, #settingsGeneralForm button, #settingsGatewayForm input, #settingsGatewayForm select, #settingsGatewayForm button",
+  );
+  inputs.forEach(function (el) {
+    if (isLocked) {
+      el.disabled = true;
+      el.style.opacity = "0.5";
+      el.style.cursor = "not-allowed";
+      if (el.tagName === "INPUT" || el.tagName === "SELECT") {
+        el.style.filter = "blur(3px)";
+      }
+    } else {
+      el.disabled = false;
+      el.style.opacity = "1";
+      el.style.cursor = "auto";
+      el.style.filter = "none";
+    }
+  });
+
+  let warningBanner = document.getElementById("settingsLockWarning");
+  if (isLocked) {
+    if (!warningBanner) {
+      warningBanner = document.createElement("div");
+      warningBanner.id = "settingsLockWarning";
+      warningBanner.className = "alert alert-error";
+      warningBanner.style.background = "rgba(255, 59, 48, 0.08)";
+      warningBanner.style.color = "#ff3b30";
+      warningBanner.style.border = "1px solid rgba(255, 59, 48, 0.15)";
+      warningBanner.style.padding = "12px";
+      warningBanner.style.borderRadius = "8px";
+      warningBanner.style.marginBottom = "1.5rem";
+      warningBanner.style.textAlign = "center";
+      warningBanner.style.fontWeight = "bold";
+      warningBanner.style.fontSize = "14px";
+      warningBanner.style.direction = "rtl";
+      warningBanner.innerHTML = `<i class="fas fa-lock" style="margin-left: 6px;"></i> دسترسی مسدود است: تغییر تنظیمات امنیتی، درگاه مالی و عمومی سیستم فقط مخصوص «مدیر کل سایت» می‌باشد.`;
+      settingsView
+        .querySelector(".dashboard-content")
+        .insertBefore(
+          warningBanner,
+          settingsView.querySelector(".content-grid"),
+        );
+    }
+  } else {
+    if (warningBanner) {
+      warningBanner.remove();
+    }
+  }
+}

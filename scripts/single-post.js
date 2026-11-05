@@ -31,32 +31,7 @@ async function loadSinglePost() {
       postImage.src = post.image;
       postImage.alt = post.title;
 
-      // CHECK FOR ASSOCIATED DIGITAL PRODUCTS (VIDEO and FILES separately)
-      const productsRaw = localStorage.getItem("benamacademyProducts");
-      let videoProduct = null;
-      let filesProduct = null;
-      if (productsRaw) {
-        try {
-          const prods = JSON.parse(productsRaw);
-          if (Array.isArray(prods)) {
-            videoProduct = prods.find(function (p) {
-              return String(p.id) === String(postId) + "-video";
-            });
-            filesProduct = prods.find(function (p) {
-              return String(p.id) === String(postId);
-            });
-          }
-        } catch (e) {}
-      }
-
-      // CHECK IF ALREADY PURCHASED
-      // What the customer owns comes from their paid orders, not from a list
-      // the browser kept. The old localStorage flag was per-device - a paid
-      // customer lost access on another browser - and could be forged from
-      // the console. localStorage is still read as a fallback so a purchase
-      // made before this change keeps working offline.
-      let isVideoPurchased = false;
-      let isFilesPurchased = false;
+      // Digital products (video / files) come from the backend via appApi.
       let purchased = [];
       try {
         if (
@@ -70,18 +45,15 @@ async function loadSinglePost() {
       } catch (e) {
         purchased = [];
       }
-      if (!purchased.length) {
-        try {
-          const cached = JSON.parse(
-            localStorage.getItem("benamacademyPurchasedProducts") || "[]",
-          );
-          if (Array.isArray(cached)) purchased = cached;
-        } catch (e) {}
-      }
-      isVideoPurchased = purchased.indexOf(postId + "-video") !== -1;
-      isFilesPurchased = purchased.indexOf(postId) !== -1;
 
-      // Flags for display (Only lock if product price is greater than 0)
+      const isVideoPurchased = purchased.indexOf(postId + "-video") !== -1;
+      const isFilesPurchased = purchased.indexOf(postId) !== -1;
+
+      // Product prices / availability are supplied by the backend. Until the
+      // backend is live, no paid video or files product exists on this page.
+      const videoProduct = null;
+      const filesProduct = null;
+
       const showLockedVideo =
         videoProduct && Number(videoProduct.price) > 0 && !isVideoPurchased;
       const showLockedFiles =
@@ -106,22 +78,12 @@ async function loadSinglePost() {
           document
             .getElementById("buyVideoBtn")
             ?.addEventListener("click", function () {
-              const cartItem = {
-                id: videoProduct.id,
-                name: videoProduct.name,
-                price: videoProduct.price,
-                img: videoProduct.img || "../images/ravin.png",
-                qty: 1,
-              };
-              localStorage.setItem(
-                "benamacademyCart",
-                JSON.stringify([cartItem]),
-              );
-              window.location.href = "checkout.html";
+              // Without a backend there is no cart to write into; the buy
+              // button is disabled until appApi.commerce.createPayment exists.
+              showToast("سبد خرید و پرداخت پس از اتصال بک‌اند فعال می‌شوند.", "info");
             });
         }
       } else {
-        // Show video normally if free or already purchased
         renderItemContent(post, {
           body: null,
           video: postVideo,
@@ -164,22 +126,10 @@ async function loadSinglePost() {
           document
             .getElementById("buyFilesBtn")
             ?.addEventListener("click", function () {
-              const cartItem = {
-                id: filesProduct.id,
-                name: filesProduct.name,
-                price: filesProduct.price,
-                img: filesProduct.img || "../images/ravin.png",
-                qty: 1,
-              };
-              localStorage.setItem(
-                "benamacademyCart",
-                JSON.stringify([cartItem]),
-              );
-              window.location.href = "checkout.html";
+              showToast("سبد خرید و پرداخت پس از اتصال بک‌اند فعال می‌شوند.", "info");
             });
         }
       } else {
-        // Show downloads normally if free or already purchased
         renderItemContent(post, {
           body: null,
           video: null,
@@ -226,3 +176,16 @@ async function loadSinglePost() {
 }
 
 loadSinglePost();
+
+function showToast(message, type = "info") {
+  const container = document.getElementById("toastContainer");
+  if (!container) return;
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.animation = "fadeOut 0.3s ease forwards";
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}

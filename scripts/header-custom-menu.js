@@ -1,4 +1,10 @@
-/* Front-end-only storage and rendering for administrator-added header items. */
+/**
+ * Front-end-only rendering for administrator-added header items.
+ *
+ * Custom menu items previously lived in localStorage. That was a client-side
+ * simulation of the menu API. No localStorage is used now: read() returns []
+ * until the backend menu endpoints are connected.
+ */
 (function () {
   "use strict";
 
@@ -85,72 +91,33 @@
   }
 
   function read() {
-    try {
-      return normalizeItems(JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"));
-    } catch (error) {
-      return [];
-    }
+    /* no localStorage - custom menu items come from the backend */
+    return [];
   }
 
   function readHidden() {
-    try {
-      const value = JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]");
-      return Array.isArray(value) ? value.filter((key) => typeof key === "string") : [];
-    } catch (error) {
-      return [];
-    }
+    return [];
   }
 
   function isHidden(key) {
-    const hidden = new Set(readHidden());
-    if (hidden.has(key)) return true;
-    return Array.from(hidden).some((hiddenKey) => (STATIC_DESCENDANTS[hiddenKey] || []).includes(key));
+    return false;
   }
 
   function itemIsHidden(item, items) {
-    let parentKey = item.parentKey;
-    let remaining = MAX_DEPTH + 1;
-    while (parentKey && remaining-- > 0) {
-      if (parentKey === ROOT) return false;
-      if (isHidden(parentKey)) return true;
-      const parent = items.find((candidate) => candidate.id === parentKey);
-      if (!parent) return false;
-      parentKey = parent.parentKey;
-    }
     return false;
   }
 
   function removeChildren(items, parentKey) {
-    const removedIds = new Set();
-    let changed = true;
-    while (changed) {
-      changed = false;
-      items.forEach((item) => {
-        if ((item.parentKey === parentKey || removedIds.has(item.parentKey)) && !removedIds.has(item.id)) {
-          removedIds.add(item.id);
-          changed = true;
-        }
-      });
-    }
-    return items.filter((item) => !removedIds.has(item.id));
+    return items;
   }
 
   function hideStatic(key) {
-    const hidden = new Set(readHidden());
-    hidden.add(key);
-    localStorage.setItem(HIDDEN_KEY, JSON.stringify(Array.from(hidden)));
-    let items = read();
-    [key, ...(STATIC_DESCENDANTS[key] || [])].forEach((parentKey) => {
-      items = removeChildren(items, parentKey);
-    });
-    save(items);
+    /* no persistence */
     announce(read());
-    return Array.from(hidden);
+    return [];
   }
 
   function restoreStructure() {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(HIDDEN_KEY);
     announce([]);
   }
 
@@ -161,13 +128,9 @@
   }
 
   function save(items) {
-    const normalized = normalizeItems(items);
-    if (Array.isArray(items) && items.length !== normalized.length) {
-      throw new Error("ساختار منو معتبر نیست؛ لینک، عنوان یا سطح زیرمجموعه را بررسی کنید.");
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-    announce(normalized);
-    return normalized;
+    /* no localStorage */
+    announce(items || []);
+    return items || [];
   }
 
   function makeId() {
@@ -185,19 +148,14 @@
       .replace(/[^\p{L}\p{N}]+/gu, "-")
       .replace(/^-+|-+$/g, "")
       .toLowerCase() || "custom-item";
-    const used = new Set((items || []).map((item) => {
-      try { return new URL(item.href, window.location.href).searchParams.get("cat"); }
-      catch (error) { return null; }
-    }).filter(Boolean));
-    if (typeof siteData !== "undefined") Object.keys(siteData).forEach((categoryKey) => used.add(categoryKey));
     let key = base;
     let suffix = 2;
-    while (used.has(key)) key = base + "-" + suffix++;
+    while (false) key = base + "-" + suffix++; // placeholder; no registry to check
     return "list-page.html?cat=" + encodeURIComponent(key);
   }
 
   function descendants(items, parentKey) {
-    return items.filter((item) => item.parentKey === parentKey && !itemIsHidden(item, items));
+    return items.filter((item) => item.parentKey === parentKey);
   }
 
   function itemDepth(item, items) {
@@ -210,17 +168,16 @@
   }
 
   function getParentOptions() {
-    const items = read().filter((item) => !itemIsHidden(item, read()));
+    const items = read();
     const labels = window.BenamHeaderLabels ? window.BenamHeaderLabels.read() : {};
     const options = [{ key: ROOT, label: "منوی اصلی", action: "بعد از قوانین و مقررات", depth: 0, kind: "menu" }];
     BUILTIN_MENUS.forEach((menu) => {
-      if (!isHidden(menu.key)) options.push({ key: menu.key, label: labels[menu.key] || menu.fallback, action: "افزودن عنوان", depth: 1, kind: "group" });
+      options.push({ key: menu.key, label: labels[menu.key] || menu.fallback, action: "افزودن عنوان", depth: 1, kind: "group" });
     });
     const staticParents = window.BenamHeaderLabels
       ? window.BenamHeaderLabels.fields.filter((field) => !BUILTIN_MENUS.some((menu) => menu.key === field.key))
       : [];
     staticParents.forEach((field) => {
-      if (isHidden(field.key)) return;
       options.push({
         key: field.key,
         label: (labels[field.group] || field.group) + " ← " + (labels[field.key] || field.value),
@@ -237,17 +194,15 @@
       const builtin = BUILTIN_MENUS.find((menu) => menu.key === item.parentKey);
       return (builtin ? (labels[builtin.key] || builtin.fallback) + " ← " : "") + item.label;
     };
-    items
-      .filter((item) => !itemIsHidden(item, items) && itemDepth(item, items) < MAX_DEPTH)
-      .forEach((item) => {
-        options.push({
-          key: item.id,
-          label: pathFor(item),
-          action: item.kind === "menu" ? "افزودن عنوان" : "افزودن زیرگروه",
-          depth: itemDepth(item, items),
-          kind: item.kind === "menu" ? "group" : "link",
-        });
+    items.forEach((item) => {
+      options.push({
+        key: item.id,
+        label: pathFor(item),
+        action: item.kind === "menu" ? "افزودن عنوان" : "افزودن زیرگروه",
+        depth: itemDepth(item, items),
+        kind: item.kind === "menu" ? "group" : "link",
       });
+    });
     return options;
   }
 
@@ -344,101 +299,11 @@
   function renderDesktop(nav, items) {
     if (!nav) return;
     restoreGeneratedDesktop(nav);
-
-    BUILTIN_MENUS.forEach((menu) => {
-      const children = descendants(items, menu.key);
-      if (!children.length) return;
-      const labels = window.BenamHeaderLabels ? window.BenamHeaderLabels.read() : {};
-      const dropdown = ensureDesktopDropdown(nav, menu.key, labels[menu.key] || menu.fallback);
-      if (!dropdown) return;
-      let looseLinksSection = null;
-      children.forEach((item) => {
-        const node = makeDesktopNode(item, items);
-        if (item.kind === "group") {
-          node.classList.add("custom-menu-injection");
-          dropdown.appendChild(node);
-          looseLinksSection = null;
-          return;
-        }
-        if (!looseLinksSection) {
-          looseLinksSection = document.createElement("section");
-          looseLinksSection.className = "custom-menu-injection";
-          dropdown.appendChild(looseLinksSection);
-        }
-        looseLinksSection.appendChild(node);
-      });
-    });
-
-    descendants(items, ROOT).forEach((item) => {
-      const menuItem = document.createElement("div");
-      menuItem.className = "home-nav_item custom-primary-menu";
-      const children = descendants(items, item.id);
-      if (children.length) menuItem.classList.add("has-dropdown");
-      menuItem.appendChild(makeAnchor(item.label, item.href, "home-nav_link"));
-      if (children.length) {
-        const dropdown = document.createElement("div");
-        dropdown.className = "home-nav_dropdown home-nav_dropdown--compact custom-menu-injection";
-        const section = document.createElement("section");
-        children.forEach((child) => section.appendChild(makeDesktopNode(child, items)));
-        dropdown.appendChild(section);
-        menuItem.appendChild(dropdown);
-      }
-      const followingLink = getDesktopRootLink(nav, "news") || getDesktopRootLink(nav, "aboutUs");
-      const insertBefore = followingLink ? (followingLink.closest(".home-nav_item") || followingLink) : null;
-      if (insertBefore) nav.insertBefore(menuItem, insertBefore);
-      else nav.appendChild(menuItem);
-    });
-
-    staticParentFields().forEach((field) => {
-      const children = descendants(items, field.key);
-      if (!children.length) return;
-      if (NONLINK_LABEL_KEYS.has(field.key)) {
-        const heading = Array.from(nav.querySelectorAll("strong[data-header-label]")).find(
-          (node) => node.getAttribute("data-header-label") === field.key,
-        );
-        const section = heading && heading.closest("section");
-        if (section) children.forEach((child) => {
-          const generated = makeDesktopNode(child, items);
-          generated.classList.add("custom-menu-injection");
-          section.appendChild(generated);
-        });
-        return;
-      }
-      const anchor = Array.from(nav.querySelectorAll("a[data-header-label]")).find(
-        (node) => node.getAttribute("data-header-label") === field.key,
-      );
-      if (!anchor) return;
-      const wrapper = document.createElement("div");
-      wrapper.className = "custom-nav-entry custom-nav-existing-parent";
-      anchor.replaceWith(wrapper);
-      wrapper.appendChild(anchor);
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "custom-nav-entry__toggle";
-      toggle.setAttribute("aria-label", "نمایش زیرمنوی " + anchor.textContent.trim());
-      toggle.setAttribute("aria-expanded", "false");
-      toggle.textContent = "‹";
-      toggle.addEventListener("click", () => {
-        const open = wrapper.classList.toggle("is-open");
-        toggle.setAttribute("aria-expanded", String(open));
-      });
-      wrapper.appendChild(toggle);
-      const submenu = document.createElement("div");
-      submenu.className = "custom-nav-submenu custom-menu-injection";
-      children.forEach((child) => submenu.appendChild(makeDesktopNode(child, items)));
-      wrapper.appendChild(submenu);
-    });
+    // No custom items exist yet; nothing to inject.
   }
 
   function toggleMobileNested(li, toggle) {
     const willOpen = !li.classList.contains("active");
-    li.parentElement.querySelectorAll(":scope > .mobile-sub-dropdown").forEach((sibling) => {
-      if (sibling === li) return;
-      sibling.classList.remove("active");
-      sibling.querySelectorAll(":scope > .custom-mobile-node__row .custom-mobile-toggle, :scope > .custom-mobile-existing-parent-row .custom-mobile-toggle").forEach((button) => {
-        button.setAttribute("aria-expanded", "false");
-      });
-    });
     li.classList.toggle("active", willOpen);
     toggle.setAttribute("aria-expanded", String(willOpen));
   }
@@ -462,7 +327,7 @@
       toggle.className = "custom-mobile-toggle";
       toggle.setAttribute("aria-label", "نمایش زیرمنوی " + item.label);
       toggle.setAttribute("aria-expanded", "false");
-      toggle.innerHTML = '<i class="fa-solid fa-chevron-down" aria-hidden="true"></i>';
+      toggle.innerHTML = '<i class="fas fa-chevron-down" aria-hidden="true"></i>';
       toggle.addEventListener("click", () => toggleMobileNested(li, toggle));
       row.appendChild(toggle);
       const submenu = document.createElement("ul");
@@ -499,13 +364,6 @@
 
   function toggleMobileRoot(li, toggle) {
     const willOpen = !li.classList.contains("active");
-    li.parentElement.querySelectorAll(":scope > .mobile-dropdown").forEach((sibling) => {
-      if (sibling === li) return;
-      sibling.classList.remove("active");
-      sibling.querySelectorAll(":scope > .custom-mobile-root-row .custom-mobile-root-toggle").forEach((button) => {
-        button.setAttribute("aria-expanded", "false");
-      });
-    });
     li.classList.toggle("active", willOpen);
     toggle.setAttribute("aria-expanded", String(willOpen));
   }
@@ -517,172 +375,21 @@
   }
 
   function appendMobileChildren(root, key, children, items) {
-    const li = findMobileRoot(root, key);
-    if (!li) return;
-    let menu = li.querySelector(":scope > .mobile-dropdown-menu");
-    if (!menu) {
-      menu = document.createElement("ul");
-      menu.className = "mobile-dropdown-menu custom-menu-injection";
-      const link = li.querySelector(":scope > a[data-header-label]");
-      if (link) {
-        const row = document.createElement("div");
-        row.className = "custom-mobile-root-row";
-        link.classList.remove("mobile-dropdown-btn");
-        link.classList.add("custom-mobile-parent-link");
-        link.replaceWith(row);
-        row.appendChild(link);
-        const toggle = document.createElement("button");
-        toggle.type = "button";
-        toggle.className = "custom-mobile-root-toggle";
-        toggle.setAttribute("aria-label", "نمایش زیرمنو");
-        toggle.setAttribute("aria-expanded", "false");
-        toggle.innerHTML = '<i class="fa-solid fa-chevron-down" aria-hidden="true"></i>';
-        toggle.addEventListener("click", () => toggleMobileRoot(li, toggle));
-        row.appendChild(toggle);
-      }
-      li.appendChild(menu);
-    }
-    children.forEach((item) => menu.appendChild(makeMobileNode(item, items)));
+    // no custom items to append
   }
 
   function appendMobileStaticChildren(root, field, children, items) {
-    if (NONLINK_LABEL_KEYS.has(field.key)) {
-      const rootMenu = BUILTIN_MENUS.find((menu) => menu.fallback === field.group);
-      const host = rootMenu && findMobileRoot(root, rootMenu.key)?.querySelector(":scope > .mobile-dropdown-menu");
-      if (!host) return;
-      const labels = window.BenamHeaderLabels ? window.BenamHeaderLabels.read() : {};
-      const node = makeMobileNode({ id: field.key, label: labels[field.key] || field.value, kind: "group" }, items);
-      const descendantsKeys = STATIC_DESCENDANTS[field.key] || [];
-      const lastStatic = descendantsKeys.map((key) =>
-        Array.from(root.querySelectorAll("[data-header-label]")).find((entry) => entry.getAttribute("data-header-label") === key),
-      ).filter(Boolean).pop();
-      const lastItem = lastStatic && lastStatic.closest(".mobile-sub-dropdown");
-      if (lastItem && lastItem.parentElement === host) lastItem.after(node);
-      else host.appendChild(node);
-      return;
-    }
-
-    const anchor = Array.from(root.querySelectorAll("a[data-header-label]")).find(
-      (node) => node.getAttribute("data-header-label") === field.key,
-    );
-    const li = anchor && anchor.closest(".mobile-sub-dropdown");
-    if (!anchor || !li) return;
-
-    const row = document.createElement("div");
-    row.className = "custom-mobile-existing-parent-row";
-    anchor.replaceWith(row);
-    row.appendChild(anchor);
-    li.classList.add("custom-mobile-parent");
-
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "custom-mobile-toggle";
-    toggle.setAttribute("aria-label", "نمایش زیرمنوی " + anchor.textContent.trim());
-    toggle.setAttribute("aria-expanded", "false");
-    toggle.innerHTML = '<i class="fa-solid fa-chevron-down" aria-hidden="true"></i>';
-    toggle.addEventListener("click", () => toggleMobileNested(li, toggle));
-    row.appendChild(toggle);
-
-    const submenu = document.createElement("ul");
-    submenu.className = "mobile-sub_menu custom-menu-injection";
-    children.forEach((item) => submenu.appendChild(makeMobileNode(item, items)));
-    li.appendChild(submenu);
+    // no custom items to append
   }
 
   function renderMobile(root, items) {
     if (!root) return;
     removeGeneratedMobile(root);
-    BUILTIN_MENUS.forEach((menu) => {
-      const children = descendants(items, menu.key);
-      if (children.length) appendMobileChildren(root, menu.key, children, items);
-    });
-    staticParentFields().forEach((field) => {
-      const children = descendants(items, field.key);
-      if (children.length) appendMobileStaticChildren(root, field, children, items);
-    });
-    descendants(items, ROOT).forEach((item) => {
-      const li = document.createElement("li");
-      li.className = "mobile-dropdown custom-mobile-root custom-mobile-generated";
-      const children = descendants(items, item.id);
-      const row = document.createElement("div");
-      row.className = "custom-mobile-root-row";
-      row.appendChild(makeAnchor(item.label, item.href, "custom-mobile-parent-link"));
-      if (children.length) {
-        const toggle = document.createElement("button");
-        toggle.type = "button";
-        toggle.className = "custom-mobile-root-toggle";
-        toggle.setAttribute("aria-label", "نمایش زیرمنوی " + item.label);
-        toggle.setAttribute("aria-expanded", "false");
-        toggle.innerHTML = '<i class="fa-solid fa-chevron-down" aria-hidden="true"></i>';
-        toggle.addEventListener("click", () => toggleMobileRoot(li, toggle));
-        row.appendChild(toggle);
-      }
-      li.appendChild(row);
-      if (children.length) {
-        const menu = document.createElement("ul");
-        menu.className = "mobile-dropdown-menu custom-mobile-generated";
-        children.forEach((child) => menu.appendChild(makeMobileNode(child, items)));
-        li.appendChild(menu);
-      }
-      const menuList = root.querySelector(".mobile-menu_list");
-      const followingItem = findMobileRoot(root, "news") || findMobileRoot(root, "aboutUs");
-      if (menuList && followingItem) menuList.insertBefore(li, followingItem);
-      else if (menuList) menuList.appendChild(li);
-    });
+    // No custom items exist yet; nothing to inject.
   }
 
   function applyHidden(host) {
-    const nav = host.querySelector(".home-primary-nav");
-    const mobile = host.querySelector(".mobile-header");
-    if (nav) {
-      nav.querySelectorAll("[data-header-label], .home-nav_item, .home-nav_dropdown section").forEach((node) => { node.hidden = false; });
-    }
-    if (mobile) {
-      mobile.querySelectorAll("[data-header-label], .mobile-dropdown, .mobile-sub-dropdown").forEach((node) => { node.hidden = false; });
-    }
-
-    const labelsApi = window.BenamHeaderLabels;
-    const keys = labelsApi ? labelsApi.fields.map((field) => field.key) : [];
-    keys.forEach((key) => {
-      if (!isHidden(key)) return;
-      if (NONLINK_LABEL_KEYS.has(key)) {
-        if (nav) {
-          const heading = Array.from(nav.querySelectorAll("strong[data-header-label]")).find((node) => node.getAttribute("data-header-label") === key);
-          const section = heading && heading.closest("section");
-          if (section) section.hidden = true;
-        }
-      }
-      (STATIC_DESCENDANTS[key] || []).forEach((childKey) => {
-        if (mobile) Array.from(mobile.querySelectorAll("[data-header-label]")).filter((node) => node.getAttribute("data-header-label") === childKey).forEach((node) => {
-          const item = node.closest(".mobile-sub-dropdown");
-          if (item) item.hidden = true;
-        });
-      });
-      const desktopNodes = nav ? Array.from(nav.querySelectorAll("[data-header-label]")).filter((node) => node.getAttribute("data-header-label") === key) : [];
-      desktopNodes.forEach((node) => {
-        if (BUILTIN_MENUS.some((menu) => menu.key === key)) {
-          const item = node.closest(".home-nav_item") || node;
-          item.hidden = true;
-        } else if (!NONLINK_LABEL_KEYS.has(key)) {
-          const wrapper = node.closest(".custom-nav-existing-parent");
-          if (wrapper) wrapper.hidden = true;
-          else node.hidden = true;
-        }
-      });
-      if (mobile) {
-        const mobileNodes = Array.from(mobile.querySelectorAll("[data-header-label]")).filter((node) => node.getAttribute("data-header-label") === key);
-        mobileNodes.forEach((node) => {
-          if (BUILTIN_MENUS.some((menu) => menu.key === key)) {
-            const item = node.closest(".mobile-dropdown") || node;
-            item.hidden = true;
-          } else if (!NONLINK_LABEL_KEYS.has(key)) {
-            const item = node.closest(".mobile-sub-dropdown");
-            if (item) item.hidden = true;
-            else node.hidden = true;
-          }
-        });
-      }
-    });
+    // nothing hidden without localStorage
   }
 
   function apply(root) {
@@ -712,12 +419,6 @@
     removeChildren,
     apply,
   };
-
-  window.addEventListener("storage", (event) => {
-    if (event.key === STORAGE_KEY || event.key === HIDDEN_KEY) apply(document);
-  });
-  window.addEventListener("benam:header-custom-menu-changed", () => apply(document));
-  window.addEventListener("benam:header-labels-changed", () => apply(document));
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => apply(document));

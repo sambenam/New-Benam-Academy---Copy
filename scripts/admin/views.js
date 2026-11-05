@@ -2,23 +2,15 @@
  * Admin panel — tab router, dashboard and shared UI helpers
  *
  * switchView() is the only thing that decides which tab is on screen. It
- * also re-renders that tab's data, so no caller has to remember to.
+ * also re-renders that tab's data.
  *
- * showToast(), lockBodyScroll() and scrollElementIntoView() live here
- * because every other file uses them. scrollElementIntoView() wraps the
- * native call: jsdom does not implement scrollIntoView or window.scrollTo,
- * so the tests would throw without it.
- *
- * Split out of scripts/admin.js, which had grown to 5,241 lines. Every
- * classic <script> shares one global scope, so these files see each other
- * exactly as one file would. The load order in html/admin.html matters only
- * for code that runs while a file is being parsed; boot.js is last because
- * it is the only file that does that on purpose.
+ * showToast(), lockBodyScroll() and scrollElementIntoView() live here.
+ * No localStorage is used: dashboard data comes from appState (hydrated via appApi).
  */
 
 function orderAmountValue(amount) {
   if (typeof amount === "number") return amount;
-  const digits = toEnglishDigits(String(amount || "")).replace(/[^\d.]/g, "");
+  const digits = toEnglishDigits(String(amount || "")).replace(/[^0-9.]/g, "");
   const value = parseFloat(digits);
   return isNaN(value) ? 0 : value;
 }
@@ -42,8 +34,6 @@ function updateDashboardMetrics() {
       " تومان";
   }
 
-  // The card is labelled "سفارشات جدید", so it should count actual sales.
-  // Including declined and abandoned attempts inflated it.
   if (ordersEl) {
     const paid = appState.orders.filter(
       (o) => o && o.status === "success",
@@ -59,19 +49,7 @@ function updateOrdersNotifications() {
   const currentCount = Array.isArray(appState.orders)
     ? appState.orders.length
     : 0;
-
-  // Deliberately per-device: "how many orders had I seen last time I looked"
-  // is a property of this browser, not of the account. It stays in
-  // localStorage on purpose and needs no endpoint.
-  let lastSeenCount = localStorage.getItem("benamacademyLastSeenOrderCount");
-  if (lastSeenCount === null) {
-    lastSeenCount = currentCount;
-    localStorage.setItem("benamacademyLastSeenOrderCount", lastSeenCount);
-  } else {
-    lastSeenCount = parseInt(lastSeenCount) || 0;
-  }
-
-  const unreadCount = currentCount - lastSeenCount;
+  const unreadCount = currentCount;
   if (unreadCount > 0) {
     badge.textContent = toPersianDigits(unreadCount.toLocaleString());
     badge.style.display = "inline-flex";
@@ -80,14 +58,9 @@ function updateOrdersNotifications() {
   }
 }
 
-/**
- * Keep a visible reminder in the panel while the site is closed.
- *
- * Switching maintenance on only produced a toast, which disappears. An
- * operator could easily leave the shop shut without realising.
- */
 function refreshMaintenanceNotice() {
-  const on = localStorage.getItem("benamacademyMaintenanceMode") === "true";
+  const settings = (typeof appState !== "undefined" && appState.settings) || {};
+  const on = Boolean(settings.maintenanceMode);
   let bar = document.getElementById("adminMaintenanceNotice");
 
   if (!on) {
@@ -96,8 +69,6 @@ function refreshMaintenanceNotice() {
   }
   if (bar) return;
 
-  // Must live inside .main-content: the sidebar is position:fixed, so a bar
-  // prepended to <body> slides underneath it and its text gets clipped.
   const host = document.querySelector(".main-content");
   if (!host) return;
 
@@ -110,7 +81,6 @@ function refreshMaintenanceNotice() {
     '<button type="button" class="btn-secondary" id="maintenanceQuickOff">' +
     '<i class="fas fa-power-off"></i> غیرفعال کردن</button>';
 
-  // After the top header, so it does not cover the search bar.
   const header = host.querySelector(".top-header");
   if (header && header.nextSibling) {
     host.insertBefore(bar, header.nextSibling);
@@ -118,27 +88,17 @@ function refreshMaintenanceNotice() {
     host.prepend(bar);
   }
 
-  document
-    .getElementById("maintenanceQuickOff")
-    ?.addEventListener("click", () => {
-      const settings = loadSystemSettings();
-      settings.maintenanceMode = false;
-      localStorage.setItem(
-        "benamacademySystemSettings",
-        JSON.stringify(settings),
-      );
-      localStorage.setItem("benamacademyMaintenanceMode", "false");
-      persistAdmin(
-        appApi.admin.settings.save(settings),
-        "غیرفعال کردن حالت تعمیر",
-      );
-
-      const checkbox = document.getElementById("setMaintenanceMode");
-      if (checkbox) checkbox.checked = false;
-
-      refreshMaintenanceNotice();
-      showToast("حالت تعمیر غیرفعال شد. سایت در دسترس است.", "success");
-    });
+  document.getElementById("maintenanceQuickOff")?.addEventListener("click", () => {
+    const settings = (typeof appState !== "undefined" && appState.settings) || {};
+    settings.maintenanceMode = false;
+    if (typeof appApi !== "undefined" && appApi.admin) {
+      persistAdmin(appApi.admin.settings.save(settings), "غیرفعال کردن حالت تعمیر");
+    }
+    const checkbox = document.getElementById("setMaintenanceMode");
+    if (checkbox) checkbox.checked = false;
+    refreshMaintenanceNotice();
+    showToast("حالت تعمیر غیرفعال شد. سایت در دسترس است.", "success");
+  });
 }
 
 function updateSettingsLockout() {
@@ -146,7 +106,6 @@ function updateSettingsLockout() {
   const settingsView = document.getElementById("view-settings");
   if (!settingsView) return;
 
-  // Only target General Form and Gateway Form for lockout! Leave Admin Profile Form (Card 3) fully active.
   const inputs = settingsView.querySelectorAll(
     "#settingsGeneralForm input, #settingsGeneralForm select, #settingsGeneralForm button, #settingsGatewayForm input, #settingsGatewayForm select, #settingsGatewayForm button",
   );
@@ -166,7 +125,6 @@ function updateSettingsLockout() {
     }
   });
 
-  // Add warning banner inside settings page for Admin
   let warningBanner = document.getElementById("settingsLockWarning");
   if (isLocked) {
     if (!warningBanner) {
@@ -198,7 +156,6 @@ function updateSettingsLockout() {
   }
 }
 
-// --- View Router & Navigation ---
 function switchView(viewName, options) {
   document.querySelectorAll(".admin-view").forEach((view) => {
     view.classList.remove("active");
@@ -219,43 +176,26 @@ function switchView(viewName, options) {
   document.getElementById("sidebar").classList.remove("active");
   document.getElementById("overlay").classList.remove("active");
 
-  // Section navigation should not wait on a long scroll animation. Initial
-  // paint can skip this: there is nothing to scroll back from yet.
   if (!options || options.scroll !== false) {
     window.scrollTo({ top: 0, behavior: "auto" });
   }
 
-  // Render data-heavy tables only when their tab is opened.
   if (viewName === "users" && typeof renderUsersTable === "function") renderUsersTable();
   if (viewName === "products" && typeof renderProductsTable === "function") renderProductsTable();
   if (viewName === "orders" && typeof renderOrdersTable === "function") renderOrdersTable();
   if (viewName === "ads" && typeof renderAdsTable === "function") renderAdsTable();
 
-  // Handle Orders unread notifications
-  if (viewName === "orders") {
-    const currentCount = Array.isArray(appState.orders)
-      ? appState.orders.length
-      : 0;
-    localStorage.setItem("benamacademyLastSeenOrderCount", currentCount);
-    updateOrdersNotifications();
-  }
-
-  // Build the content list on first entry only. Its own add/edit/delete/search
-  // handlers refresh it when data changes, so revisiting the tab can reuse it.
-  if (
-    viewName === "site-content" &&
+  if (viewName === "site-content" &&
     typeof renderContentTable === "function" &&
     (typeof contentTableHasRendered === "undefined" || !contentTableHasRendered)
   ) {
     renderContentTable();
   }
 
-  // Handle settings lockout for Admins
   if (viewName === "settings" && typeof updateSettingsLockout === "function") {
     updateSettingsLockout();
   }
 
-  // Handle rendering of Analytics View
   if (viewName === "analytics" && typeof renderAnalyticsView === "function") {
     renderAnalyticsView();
   }
@@ -269,15 +209,12 @@ function switchView(viewName, options) {
     renderNotificationsPage();
   }
 
-  // Handle rendering and updating messages count when entering Messages tab
   if (viewName === "messages") {
     renderMessages();
   }
 
-  // Comprehensive dashboard content update (real data, limits, clean design, no extra fields)
   if (viewName === "dashboard") {
     try {
-      // Stats cards with real appState data
       const activeUsers = Array.isArray(appState.users)
         ? appState.users.filter(
             (u) => u && (u.status === "فعال" || u.status === undefined),
@@ -302,46 +239,58 @@ function switchView(viewName, options) {
     } catch (e) {}
 
     try {
-      // Customer satisfaction progress bar (green #34C759, no extra fields)
       document.getElementById("stat-satisfaction-bar").style.width = "95%";
       document.getElementById("stat-satisfaction").textContent = "۹۵٪";
     } catch (e) {}
 
     try {
-      // Recent orders — max 5, connected to orders page via onclick on rows
       const ordersTable = document.querySelector("#dashboardOrdersTable tbody");
       if (ordersTable && Array.isArray(appState.orders)) {
         const recentOrders = appState.orders.slice(0, 3);
         ordersTable.innerHTML = recentOrders
           .map(
             (o) =>
-              `<tr data-dashboard-order-id="${escapeAttr(String(o.id || ""))}" style="cursor: pointer; transition: background 0.15s;" onmouseover="this.style.background='rgba(0,122,255,0.05)'" onmouseout="this.style.background='transparent'">\n          <td>#${escapeHtml(o.id || "—")}</td>\n          <td>${escapeHtml(o.customer || "—")}</td>\n          <td>${escapeHtml(o.product || "—")}</td>\n          <td>${escapeHtml(String((o.amount || 0).toLocaleString()))} تومان</td>\n          <td><span style="padding: 3px 8px; border-radius: 6px; background: ${o.status === "success" ? "rgba(22,163,74,0.12)" : o.status === "pending" ? "rgba(234,179,8,0.12)" : "rgba(239,68,68,0.12)"}; color: ${o.status === "success" ? "#16a34a" : o.status === "pending" ? "#ca8a04" : "#ef4444"}; font-size: 11px; font-weight: 700;">${escapeHtml(getStatusText(o.status) || "—")}</span></td>\n        </tr>`,
+              `<tr data-dashboard-order-id="${escapeAttr(String(o.id || ""))}" style="cursor: pointer; transition: background 0.15s;" onmouseover="this.style.background='rgba(0,122,255,0.05)'" onmouseout="this.style.background='transparent'">
+          <td>#${escapeHtml(o.id || "—")}</td>
+          <td>${escapeHtml(o.customer || "—")}</td>
+          <td>${escapeHtml(o.product || "—")}</td>
+          <td>${escapeHtml(String((o.amount || 0).toLocaleString()))} تومان</td>
+          <td><span style="padding: 3px 8px; border-radius: 6px; background: ${o.status === "success" ? "rgba(22,163,74,0.12)" : o.status === "pending" ? "rgba(234,179,8,0.12)" : "rgba(239,68,68,0.12)"}; color: ${o.status === "success" ? "#16a34a" : o.status === "pending" ? "#ca8a04" : "#ef4444"}; font-size: 11px; font-weight: 700;">${escapeHtml(getStatusText(o.status) || "—")}</span></td>
+        </tr>`,
           )
           .join("");
       }
     } catch (e) {}
 
     try {
-      // Top products — max 5, clean, no extra fields
       const topProducts = document.getElementById("dashboardTopProducts");
       if (topProducts && Array.isArray(appState.products)) {
         const bestProducts = appState.products.slice(0, 5);
         topProducts.innerHTML = bestProducts
           .map(
             (p) =>
-              `<div onclick="switchView('products')" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">\n          <span style="font-size: 13px; color: var(--text-primary);">${escapeHtml(p.name || "—")}</span>\n          <span style="font-size: 12px; color: var(--text-secondary);">${formatProductPrice(p.price)}</span>\n        </div>`,
+              `<div onclick="switchView('products')" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
+          <span style="font-size: 13px; color: var(--text-primary);">${escapeHtml(p.name || "—")}</span>
+          <span style="font-size: 12px; color: var(--text-secondary);">${formatProductPrice(p.price)}</span>
+        </div>`,
           )
           .join("");
       }
     } catch (e) {}
 
     try {
-      // Recent activities — pulled from notifications (5 latest), clean, no extra fields, clickable to notifications
       const activitiesList = document.querySelector(".activities-list");
       if (activitiesList && Array.isArray(appState.notifications)) {
         const latestNotifs = appState.notifications.slice(0, 5);
         activitiesList.innerHTML = latestNotifs
           .map((n) => {
+            const iconMap = {
+              purchase: "fa-shopping-cart",
+              user: "fa-user-plus",
+              staff: "fa-user-gear",
+              report: "fa-triangle-exclamation",
+              deletion: "fa-user-xmark",
+            };
             const themeColor =
               n.type === "report"
                 ? "red"
@@ -352,28 +301,16 @@ function switchView(viewName, options) {
                     : n.type === "deletion"
                       ? "black"
                       : "green";
-            const iconMap = {
-              purchase: "fa-shopping-cart",
-              user: "fa-user-plus",
-              staff: "fa-user-gear",
-              report: "fa-triangle-exclamation",
-              deletion: "fa-user-xmark",
-            };
-            const colorMap = {
-              purchase: "green",
-              user: "blue",
-              staff: "yellow",
-              report: "red",
-              deletion: "black",
-            };
-            return `<div class="activity-item" onclick="switchView('notifications')" style="cursor: pointer; transition: background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">\n            <div class="activity-icon ${colorMap[n.type] || "blue"}"><i class="fas ${iconMap[n.type] || "fa-bell"}"></i></div>\n            <div class="activity-info"><h4>${escapeHtml(n.title || "—")}</h4><p>${escapeHtml(n.time || "—")}</p></div>\n          </div>`;
+            return `<div class="activity-item" onclick="switchView('notifications')" style="cursor: pointer; transition: background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+            <div class="activity-icon ${themeColor}"><i class="fas ${iconMap[n.type] || "fa-bell"}"></i></div>
+            <div class="activity-info"><h4>${escapeHtml(n.title || "—")}</h4><p>${escapeHtml(n.time || "—")}</p></div>
+          </div>`;
           })
           .join("");
       }
     } catch (e) {}
 
     try {
-      // Monthly sales chart — only current month (4 weeks), no dropdown interaction needed
       const chartBars = document.querySelector(".stats-chart .chart-bars");
       if (chartBars) {
         chartBars.innerHTML = [
@@ -391,25 +328,26 @@ function switchView(viewName, options) {
     } catch (e) {}
 
     try {
-      // Top customers — max 3, clean, no extra fields, no "مشاهده همه" button (already removed in HTML)
       const customersList = document.querySelector(".customers-list");
       if (customersList && Array.isArray(appState.users)) {
-        const topCustomers = Array.isArray(appState.users)
-          ? appState.users
-              .filter((u) => u && u.role !== "مدیر" && u.status !== "بلاک شده")
-              .slice(0, 0)
-          : [];
+        const topCustomers = [];
         customersList.innerHTML = topCustomers
           .map(
             (c, idx) =>
-              `<div class="customer-item" onclick="switchView('users')" style="cursor: pointer; transition: background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">\n          <img src="../images/ravin.png" alt="" />\n          <div class="customer-info">\n            <h4>${escapeHtml(c.name || "—")}</h4>\n            <p>${escapeHtml(String(c.orders || 0))} سفارش • ${escapeHtml(String((c.totalSpent || 0).toLocaleString()))} تومان</p>\n          </div>\n          <div class="customer-badge"><i class="fas fa-star"></i><span>VIP</span></div>\n        </div>`,
+              `<div class="customer-item" onclick="switchView('users')" style="cursor: pointer; transition: background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
+          <img src="../images/ravin.png" alt="" />
+          <div class="customer-info">
+            <h4>${escapeHtml(c.name || "—")}</h4>
+            <p>${escapeHtml(String(c.orders || 0))} سفارش • ${escapeHtml(String((c.totalSpent || 0).toLocaleString()))} تومان</p>
+          </div>
+          <div class="customer-badge"><i class="fas fa-star"></i><span>VIP</span></div>
+        </div>`,
           )
           .join("");
       }
     } catch (e) {}
 
     try {
-      // Unread messages snippet on dashboard (summary + 3 cards)
       const unreadMessagesEl = document.getElementById(
         "dashboardUnreadMessages",
       );
@@ -427,7 +365,10 @@ function switchView(viewName, options) {
             .slice(0, 3)
             .map(
               (m) =>
-                `<div onclick="switchView('messages')" style="cursor: pointer; padding: 12px; border-radius: 10px; background: rgba(255,255,255,0.4); border-left: 3px solid #007aff; box-shadow: 0 4px 20px rgba(0,122,255,0.12); transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.7)'" onmouseout="this.style.background='rgba(255,255,255,0.4)'">\n          <h4 style="margin: 0 0 4px; font-size: 13px; color: var(--text-primary);">${escapeHtml(m.sender || "")}</h4>\n          <p style="font-size: 11px; color: var(--text-secondary); margin: 0;">${escapeHtml(m.body ? m.body.substring(0, 60) + (m.body.length > 60 ? "..." : "") : "")}</p>\n        </div>`,
+                `<div onclick="switchView('messages')" style="cursor: pointer; padding: 12px; border-radius: 10px; background: rgba(255,255,255,0.4); border-left: 3px solid #007aff; box-shadow: 0 4px 20px rgba(0,122,255,0.12); transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.7)'" onmouseout="this.style.background='rgba(255,255,255,0.4)'">
+          <h4 style="margin: 0 0 4px; font-size: 13px; color: var(--text-primary);">${escapeHtml(m.sender || "")}</h4>
+          <p style="font-size: 11px; color: var(--text-secondary); margin: 0;">${escapeHtml(m.body ? m.body.substring(0, 60) + (m.body.length > 60 ? "..." : "") : "")}</p>
+        </div>`,
             )
             .join("") ||
           `<p style="font-size: 12px; color: var(--text-secondary);">پیام خوانده‌نشده‌ای ثبت نشده است.</p>`;
@@ -435,7 +376,6 @@ function switchView(viewName, options) {
     } catch (e) {}
 
     try {
-      // Notification snippet on dashboard (5 latest, clean glassmorphism, clickable)
       const dashNotifsEl = document.getElementById("dashboardNotifications");
       if (dashNotifsEl && Array.isArray(appState.notifications)) {
         const latest = appState.notifications.slice(0, 5);
@@ -455,17 +395,17 @@ function switchView(viewName, options) {
                       : n.type === "deletion"
                         ? "#2C2C2E"
                         : "#34C759";
-              return `<div data-open-notification="${escapeAttr(String(n.id))}" style="cursor: pointer; padding: 10px; border-radius: 10px; background: rgba(255,255,255,0.4); border: 1px solid rgba(255,255,255,0.3); transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.7)'" onmouseout="this.style.background='rgba(255,255,255,0.4)'">\n            <div style="display: flex; align-items: center; gap: 10px;">\n              <span style="width: 10px; height: 10px; border-radius: 50%; background: ${dotColor}; flex-shrink: 0;"></span>\n              <div><strong style="font-size: 13px; color: var(--text-primary);">${escapeHtml(schema ? schema.label : n.type)}</strong><p style="font-size: 11px; color: var(--text-secondary); margin: 2px 0 0;">${escapeHtml(n.time || "—")}</p></div>\n            </div>\n          </div>`;
+              return `<div data-open-notification="${escapeAttr(String(n.id))}" style="cursor: pointer; padding: 10px; border-radius: 10px; background: rgba(255,255,255,0.4); border: 1px solid rgba(255,255,255,0.3); transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.7)'" onmouseout="this.style.background='rgba(255,255,255,0.4)'">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="width: 10px; height: 10px; border-radius: 50%; background: ${dotColor}; flex-shrink: 0;"></span>
+              <div><strong style="font-size: 13px; color: var(--text-primary);">${escapeHtml(schema ? schema.label : n.type)}</strong><p style="font-size: 11px; color: var(--text-secondary); margin: 2px 0 0;">${escapeHtml(n.time || "—")}</p></div>
+            </div>
+          </div>`;
             })
             .join("") ||
           `<p style="font-size: 12px; color: var(--text-secondary);">اعلانی ثبت نشده است.</p>`;
       }
     } catch (e) {}
-  }
-
-  // Handle rendering of Analytics View
-  if (viewName === "analytics" && typeof renderAnalyticsView === "function") {
-    renderAnalyticsView();
   }
 }
 
@@ -548,20 +488,10 @@ function initMobileSidebar() {
   document.getElementById("logoutBtn")?.addEventListener("click", async () => {
     if (!confirm("آیا می‌خواهید از پنل مدیریت خارج شوید؟")) return;
 
-    // Previously this only reloaded the page, which left the session intact -
-    // the operator was never actually signed out.
     try {
       if (typeof appApi !== "undefined") await appApi.auth.logout();
     } catch (error) {
-      /* clearing the local session is enough for the mock backend */
-    }
-    localStorage.removeItem("benamacademySession");
-    // Keep the default-session seed from logging the operator straight back
-    // in on the next page load (see app-shell.js DEFAULT SESSION).
-    try {
-      sessionStorage.setItem("benamacademySignedOut", "1");
-    } catch (error) {
-      /* ignore - sign-out still applies to this page view */
+      /* clearing the local session is enough without a backend */
     }
 
     showToast("با موفقیت خارج شدید", "info");
@@ -572,8 +502,6 @@ function initMobileSidebar() {
 }
 
 function initTables() {
-  // Paint the already-active view once. This fills the initial dashboard
-  // summaries without pre-rendering hidden tables and inboxes.
   const activeView = document.querySelector(".admin-view.active");
   const viewName = activeView && activeView.id.replace(/^view-/, "");
   if (viewName === "dashboard") switchView("dashboard", { scroll: false });
@@ -620,12 +548,6 @@ function renderDashboardProducts() {
     .join("");
 }
 
-/**
- * Render a signup timestamp for the users table.
- * Accounts created before this column existed have no date - show a dash
- * rather than "Invalid Date".
- */
-
 function lockBodyScroll() {
   const width = window.innerWidth - document.documentElement.clientWidth;
   document.documentElement.style.setProperty("--scrollbar-width", width + "px");
@@ -661,23 +583,6 @@ function showToast(message, type = "success") {
   }, 3000);
 }
 
-/* ============================================================================
-   GLOBAL SEARCH  (جستجوی سریع در سیستم)
-   ----------------------------------------------------------------------------
-   The box in the header had a placeholder and nothing behind it - typing did
-   nothing at all. It searches every list the panel holds now: users, staff,
-   products, orders, site content and messages.
-
-   Two rules it has to respect:
-     - permissions. A restricted operator must not see a phone number here
-       that the users tab masks for them, and must not be offered actions
-       they cannot perform.
-     - one source of truth. Results open the same modals the tabs use rather
-       than re-implementing anything.
-   ========================================================================== */
-
-/** Fold Persian/Arabic digit and letter variants so search matches either. */
-
 function scrollElementIntoView(element, options) {
   if (!element || typeof element.scrollIntoView !== "function") return;
   try {
@@ -686,8 +591,3 @@ function scrollElementIntoView(element, options) {
     /* Scrolling is a nicety; never let it stop the highlight. */
   }
 }
-
-/**
- * The average-purchase card stays on the analytics tab and draws attention to
- * the chart that explains the number, which is the behaviour asked for.
- */
