@@ -553,16 +553,9 @@ function initMobileSidebar() {
     try {
       if (typeof appApi !== "undefined") await appApi.auth.logout();
     } catch (error) {
-      /* clearing the local session is enough for the mock backend */
+      /* even if the server call fails, drop the local token */
     }
     localStorage.removeItem("benamacademySession");
-    // Keep the default-session seed from logging the operator straight back
-    // in on the next page load (see app-shell.js DEFAULT SESSION).
-    try {
-      sessionStorage.setItem("benamacademySignedOut", "1");
-    } catch (error) {
-      /* ignore - sign-out still applies to this page view */
-    }
 
     showToast("با موفقیت خارج شدید", "info");
     setTimeout(() => {

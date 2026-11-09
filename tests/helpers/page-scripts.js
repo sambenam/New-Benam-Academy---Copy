@@ -102,7 +102,7 @@ function bundleSource(page, options) {
  * for instance. They used to read scripts/admin.js by name, which stopped
  * existing the moment it was split into scripts/admin/.
  *
- * Only the panel's thirteen files are joined: api.js, the mock and the shared
+ * Only the panel's files are joined: api.js and the shared
  * data files are excluded, so a pattern found here really is in panel code.
  */
 function adminSource() {

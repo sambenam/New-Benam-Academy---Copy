@@ -3,15 +3,10 @@
  *
  * BACKEND HANDOFF
  * ===============
- * This repository contains no backend and no api-mock-*.js modules. Every
- * appApi method below uses fetch. Set window.APP_CONFIG.apiBaseUrl before
- * loading this file; if it is empty, requests go to the current origin.
- * `apiMode` is retained as a legacy config value but does not switch adapters.
- *
- * appApi is the main boundary for HTTP requests, not for every piece of
- * browser state: several demo/UI features still read or write localStorage
- * directly. See docs/تحویل-به-بک‌اند.md before treating browser storage as
- * authoritative.
+ * This repository contains no backend, no mock server and no local-storage
+ * data fallbacks. Every appApi method below uses fetch and surfaces server
+ * errors to the caller. Set window.APP_CONFIG.apiBaseUrl before loading this
+ * file; if it is empty, requests go to the current origin.
  *
  * WHAT THE BACKEND DEVELOPER NEEDS
  * ================================
@@ -34,20 +29,13 @@
  * Full checklist: docs/تحویل-به-بک‌اند.md
  */
 
-const APP_API_STORAGE = "benamacademyApiState";
 const APP_SESSION_STORAGE = "benamacademySession";
 const APP_LOCAL_STORAGE =
   typeof localStorage !== "undefined" ? localStorage : null;
 
 const APP_API_CONFIG = {
   baseUrl:
-    (typeof window !== "undefined" && window.APP_CONFIG?.apiBaseUrl) ||
-    APP_LOCAL_STORAGE?.getItem("benamacademyApiBaseUrl") ||
-    "",
-  mode:
-    (typeof window !== "undefined" && window.APP_CONFIG?.apiMode) ||
-    APP_LOCAL_STORAGE?.getItem("benamacademyApiMode") ||
-    "real",
+    (typeof window !== "undefined" && window.APP_CONFIG?.apiBaseUrl) || "",
   timeout: 10000,
 };
 
@@ -76,69 +64,6 @@ function writeStorage(key, value) {
   APP_LOCAL_STORAGE?.setItem(key, JSON.stringify(value));
 }
 
-// Temporary browser-only fallback for the ads feature while its API is being
-// wired up. Keep the server first; only use localStorage for missing/offline
-// routes, never for authorization or validation errors.
-const LOCAL_ADS_STORAGE_KEY = "benamacademyAds";
-const ADS_FALLBACK_STATUSES = new Set([0, 404, 405, 501, 502, 503, 504]);
-
-function readLocalAds() {
-  const ads = readStorage(LOCAL_ADS_STORAGE_KEY, []);
-  return Array.isArray(ads) ? ads.filter((ad) => ad && typeof ad === "object") : [];
-}
-
-function writeLocalAds(ads) {
-  if (!APP_LOCAL_STORAGE) {
-    throw new ApiError("ذخیره‌سازی محلی در این مرورگر در دسترس نیست.", 0);
-  }
-  writeStorage(LOCAL_ADS_STORAGE_KEY, ads);
-}
-
-function canUseLocalAdsFallback(error) {
-  const config = typeof window !== "undefined" ? window.APP_CONFIG : null;
-  let explicitlyDisabled = config?.adsLocalFallback === false;
-  try {
-    explicitlyDisabled ||= APP_LOCAL_STORAGE?.getItem("benamacademyAdsLocalFallback") === "false";
-  } catch (e) {}
-  return !explicitlyDisabled && ADS_FALLBACK_STATUSES.has(Number(error?.status || 0));
-}
-
-function localAdsResult(value) {
-  return value && typeof value === "object"
-    ? { ...value, _localOnly: true }
-    : { success: true, _localOnly: true };
-}
-
-function createLocalAd(payload) {
-  const ads = readLocalAds();
-  const ad = {
-    ...payload,
-    id: payload.id || createId("ad"),
-    createdAt: payload.createdAt || Date.now(),
-  };
-  const index = ads.findIndex((item) => String(item.id) === String(ad.id));
-  if (index === -1) ads.unshift(ad);
-  else ads[index] = { ...ads[index], ...ad };
-  writeLocalAds(ads);
-  return localAdsResult(ad);
-}
-
-function updateLocalAd(id, payload) {
-  const ads = readLocalAds();
-  const index = ads.findIndex((item) => String(item.id) === String(id));
-  if (index === -1) {
-    throw new ApiError("تبلیغ محلی پیدا نشد.", 404);
-  }
-  ads[index] = { ...ads[index], ...payload, id: ads[index].id };
-  writeLocalAds(ads);
-  return localAdsResult(ads[index]);
-}
-
-function removeLocalAd(id) {
-  writeLocalAds(readLocalAds().filter((item) => String(item.id) !== String(id)));
-  return localAdsResult({ success: true });
-}
-
 /**
  * A strictly increasing counter for records created in the same millisecond.
  *
@@ -164,84 +89,12 @@ function getSession() {
   return readStorage(APP_SESSION_STORAGE, null);
 }
 
-/**
- * The session of a customer who is allowed to act right now.
- *
- * Blocking an account only stopped the next login: anyone already signed in
- * carried on buying, sending messages and editing their profile for as long
- * as the tab stayed open, which made the moderation control largely
- * decorative. Every write path that acts on behalf of a customer checks the
- * live account status here instead of trusting the token.
- *
- * BACKEND NOTE: the server must repeat this on every authenticated request.
- * A disabled account has to be rejected at the API, not just in the client.
- */
-function getActiveSession() {
-  const session = getSession();
-  if (!session || !session.user) return session;
-
-  const account = (getApiState().users || []).find(
-    (u) => String(u.id) === String(session.user.id),
-  );
-  // No matching record means a seeded or dev session; leave it alone.
-  if (!account) return session;
-
-  if (account.status && account.status !== "فعال") {
-    throw new ApiError(
-      "حساب کاربری شما غیرفعال شده است. با پشتیبانی تماس بگیرید.",
-      403,
-    );
-  }
-  return session;
-}
-
 function setSession(session) {
   if (session) {
     writeStorage(APP_SESSION_STORAGE, session);
   } else {
     APP_LOCAL_STORAGE?.removeItem(APP_SESSION_STORAGE);
   }
-}
-
-function getApiState() {
-  const saved = readStorage(APP_API_STORAGE, {});
-  return {
-    ...saved,
-    users: Array.isArray(saved.users) ? saved.users : [],
-    messages: Array.isArray(saved.messages) ? saved.messages : [],
-    newsletter: Array.isArray(saved.newsletter) ? saved.newsletter : [],
-    orders: Array.isArray(saved.orders) ? saved.orders : [],
-    profiles:
-      saved.profiles && typeof saved.profiles === "object"
-        ? saved.profiles
-        : {},
-    content:
-      saved.content && typeof saved.content === "object" ? saved.content : {},
-  };
-}
-
-function saveApiState(state) {
-  writeStorage(APP_API_STORAGE, state);
-}
-
-/**
- * A money value that is safe to store.
- *
- * A negative amount used to be written straight through, and because the
- * revenue report just sums paid orders, one order of -90,000 cancelled out a
- * real 100,000 sale and the totals silently under-reported. Anything that is
- * not a finite, non-negative number becomes 0.
- */
-function sanitizeAmount(value) {
-  const amount = Number(value);
-  if (!isFinite(amount) || amount < 0) return 0;
-  return amount;
-}
-
-function normalizeEmail(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
 }
 
 function validateRequired(value, message) {
@@ -314,9 +167,6 @@ const appApi = {
     register: (payload) =>
       request("/auth/register", { method: "POST", body: payload }),
     logout: () => request("/auth/logout", { method: "POST" }),
-    /** Dev helper - see the /auth/promote note in the mock router. */
-    promote: (payload) =>
-      request("/auth/promote", { method: "POST", body: payload }),
     me: () => request("/auth/me"),
     forgotPassword: (payload) =>
       request("/auth/forgot-password", { method: "POST", body: payload }),
@@ -375,21 +225,14 @@ const appApi = {
      pages. The public banner script calls this; the admin tab uses
      appApi.admin.ads for create/update/delete. */
   ads: {
-    list: async () => {
-      try {
-        return await request("/ads");
-      } catch (error) {
-        if (!canUseLocalAdsFallback(error)) throw error;
-        return readLocalAds().filter((ad) => ad.active !== false);
-      }
-    },
+    list: () => request("/ads"),
   },
 
   /* ------------------------------------------------------------------------
      ADMIN PANEL API
      Every admin-panel data operation goes through here. A backend developer
-     implements the endpoints listed in scripts/admin/API_CONTRACT.md, flips
-     APP_API_CONFIG.mode to "real", and the panel keeps working unchanged.
+     implements the endpoints listed in docs/API_CONTRACT.md and the panel
+     works unchanged — there is no client-side switch to flip.
      ------------------------------------------------------------------------ */
   admin: {
     products: {
@@ -517,43 +360,18 @@ const appApi = {
         request("/admin/settings", { method: "PUT", body: payload }),
     },
     ads: {
-      list: async () => {
-        try {
-          return await request("/admin/ads");
-        } catch (error) {
-          if (!canUseLocalAdsFallback(error)) throw error;
-          return readLocalAds();
-        }
-      },
-      create: async (payload) => {
-        try {
-          return await request("/admin/ads", { method: "POST", body: payload });
-        } catch (error) {
-          if (!canUseLocalAdsFallback(error)) throw error;
-          return createLocalAd(payload);
-        }
-      },
-      update: async (id, payload) => {
-        try {
-          return await request("/admin/ads/" + encodeURIComponent(id), {
-            method: "PATCH",
-            body: payload,
-          });
-        } catch (error) {
-          if (!canUseLocalAdsFallback(error)) throw error;
-          return updateLocalAd(id, payload);
-        }
-      },
-      remove: async (id) => {
-        try {
-          return await request("/admin/ads/" + encodeURIComponent(id), {
-            method: "DELETE",
-          });
-        } catch (error) {
-          if (!canUseLocalAdsFallback(error)) throw error;
-          return removeLocalAd(id);
-        }
-      },
+      list: () => request("/admin/ads"),
+      create: (payload) =>
+        request("/admin/ads", { method: "POST", body: payload }),
+      update: (id, payload) =>
+        request("/admin/ads/" + encodeURIComponent(id), {
+          method: "PATCH",
+          body: payload,
+        }),
+      remove: (id) =>
+        request("/admin/ads/" + encodeURIComponent(id), {
+          method: "DELETE",
+        }),
     },
   },
 };

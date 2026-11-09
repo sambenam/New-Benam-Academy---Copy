@@ -34,14 +34,7 @@ window.addEventListener("storage", function (event) {
     reconcileNotifications();
     if (typeof renderOrdersTable === "function") renderOrdersTable();
   }
-  // benamacademyApiState holds accounts created on the public site, so a customer
-  // editing their own profile changes that key - not benamacademyUsers. Watching
-  // only the admin store meant those edits never reached an open panel.
-  if (
-    (event.key === "benamacademyUsers" ||
-      event.key === "benamacademyApiState") &&
-    event.newValue
-  ) {
+  if (event.key === "benamacademyUsers" && event.newValue) {
     // Re-read through the API rather than taking the raw value.
     //
     // The event only carries the admin store, but users.list() merges that

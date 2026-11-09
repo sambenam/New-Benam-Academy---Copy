@@ -81,13 +81,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       await appApi.auth.login({ email, password });
-      // A successful login lifts the per-tab sign-out flag so the default
-      // session can be seeded again if this session ever goes missing.
-      try {
-        sessionStorage.removeItem("benamacademySignedOut");
-      } catch (error) {
-        /* ignore */
-      }
       showMessage(loginForm, "ورود با موفقیت انجام شد.", "success");
       setTimeout(() => {
         window.location.href = "user-profile.html";

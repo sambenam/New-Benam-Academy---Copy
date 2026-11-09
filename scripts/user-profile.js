@@ -107,19 +107,12 @@ function initProfileNavigation() {
       e.preventDefault();
       if (confirm("آیا می‌خواهید از حساب کاربری خود خارج شوید؟")) {
         // Previously this only reloaded the page - the session stayed intact
-        // and, with the default-session seed, the user was logged straight
-        // back in as the manager. Clear both the session and the seed flag.
         try {
           if (typeof appApi !== "undefined") await appApi.auth.logout();
         } catch (error) {
-          /* clearing the local session is enough without a backend */
+          /* even if the server call fails, drop the local token */
         }
         localStorage.removeItem("benamacademySession");
-        try {
-          sessionStorage.setItem("benamacademySignedOut", "1");
-        } catch (error) {
-          /* ignore - sign-out still applies to this page view */
-        }
         showToast("با موفقیت خارج شدید", "info");
         setTimeout(() => (window.location.href = "index.html"), 800);
       }

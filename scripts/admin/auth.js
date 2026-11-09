@@ -205,13 +205,6 @@ if (typeof window !== "undefined") {
     asAdmin: () => setDevRole("ادمین"),
     reset() {
       localStorage.removeItem("benamacademySession");
-      // Forget any per-tab sign-out so the default manager session seeds
-      // again after reload (see app-shell.js DEFAULT SESSION).
-      try {
-        sessionStorage.removeItem("benamacademySignedOut");
-      } catch (error) {
-        /* ignore */
-      }
       window.location.reload();
     },
   };

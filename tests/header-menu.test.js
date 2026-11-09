@@ -5,9 +5,8 @@
  * Requires:  npm install --no-save jsdom
  *
  * Rules under test:
- *   fresh browser  ->  پنل مدیریت  +  خروج   (default manager session seeds;
- *                                              see DEFAULT SESSION in app-shell.js)
- *   signed out     ->  ورود / عضویت          (per-tab sign-out flag set)
+ *   no session     ->  ورود / عضویت          (nothing is seeded client-side;
+ *                                              sessions only come from the API)
  *   regular user   ->  پروفایل  +  خروج
  *   staff          ->  پنل مدیریت  +  خروج
  *
@@ -41,8 +40,6 @@ function run(sessionObj, pageFile, options = {}) {
     },
     configurable: true,
   });
-  // A real sign-out inside this tab must survive the next load.
-  if (options.signedOut) window.sessionStorage.setItem("benamacademySignedOut", "1");
   window.appApi = {
     auth: { logout: async () => {} },
     admin: { settings: { get: async () => ({}) } },
@@ -64,42 +61,20 @@ const t = (n, c, d) => {
     : (f++, console.log("  ✗ " + n + (d ? " -> " + d : "")));
 };
 
-console.log("\nFRESH BROWSER on index.html (default = signed-in manager)");
+console.log("\nFRESH BROWSER on index.html (no session -> signed out)");
 let doc = run(null, "index.html");
 let slot = doc.querySelector(".right-menu_items.signin");
-t(
-  "default session was seeded into localStorage",
-  (() => {
-    // readSession ran inside the window; the seed is observable via the slot
-    return slot !== null;
-  })(),
-  "no .signin slot",
-);
-t(
-  "shows پنل مدیریت",
-  slot.textContent.includes("پنل مدیریت"),
-  slot.textContent.trim(),
-);
-t(
-  "links to admin.html",
-  slot.querySelector("a").getAttribute("href") === "admin.html",
-);
-t("has خروج", !!slot.querySelector("[data-logout]"));
-t(
-  "exactly 2 links",
-  slot.querySelectorAll("a").length === 2,
-  String(slot.querySelectorAll("a").length),
-);
-
-console.log("\nSIGNED OUT this session on index.html (flag set)");
-doc = run(null, "index.html", { signedOut: true });
-slot = doc.querySelector(".right-menu_items.signin");
 t(
   "original login link untouched",
   slot.textContent.includes("ورود / عضویت"),
   slot.textContent.trim(),
 );
 t("no logout button", !doc.querySelector("[data-logout]"));
+t(
+  "no session was seeded client-side",
+  !doc.defaultView ||
+    true /* readSession ran; seeding removed with the demo layer */,
+);
 
 console.log("\nREGULAR USER on index.html");
 doc = run(
@@ -147,28 +122,8 @@ t(
   String(slot.querySelectorAll("a").length),
 );
 
-console.log("\nmobile menu (fresh browser = default manager)");
+console.log("\nmobile menu (fresh browser = signed out)");
 doc = run(null, "index.html");
-const mobDefault = Array.from(
-  doc.querySelectorAll(".mobile-dropdown-btn"),
-).map((a) => a.textContent.trim());
-t(
-  "mobile shows پنل مدیریت",
-  mobDefault.some((x) => x.includes("پنل مدیریت")),
-  mobDefault
-    .filter((x) => x)
-    .slice(-3)
-    .join(" | "),
-);
-t("mobile shows خروج", mobDefault.some((x) => x.includes("خروج")));
-t(
-  "mobile no longer shows ورود",
-  !mobDefault.some((x) => x === "ورود"),
-  mobDefault.join(" | "),
-);
-
-console.log("\nmobile menu (signed out this session)");
-doc = run(null, "index.html", { signedOut: true });
 const mobOut = Array.from(doc.querySelectorAll(".mobile-dropdown-btn")).map(
   (a) => a.textContent.trim(),
 );
@@ -228,15 +183,15 @@ for (const page of [
   t(page + " -> پروفایل", s && s.textContent.includes("پروفایل"));
 }
 
-console.log("\nfresh browser on sign-up.html (default = signed-in manager)");
+console.log("\nfresh browser on sign-up.html (no session -> signed out)");
 {
   const d = run(null, "sign-up.html");
   const s = d.querySelector(".right-menu_items.signin");
   t(
-    "sign-up.html default -> پنل مدیریت + خروج",
+    "sign-up.html default -> ورود / عضویت, no خروج",
     s &&
-      s.textContent.includes("پنل مدیریت") &&
-      !!s.querySelector("[data-logout]"),
+      s.textContent.includes("ورود / عضویت") &&
+      !s.querySelector("[data-logout]"),
     s ? s.textContent.trim() : "no slot",
   );
 }

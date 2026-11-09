@@ -196,72 +196,6 @@
     return STAFF_ROLES.indexOf(role) !== -1;
   }
 
-  /* ==========================================================================
-     DEFAULT SESSION — the site opens as the signed-in manager
-     --------------------------------------------------------------------------
-     Demo default: a browser with no session is seeded as «مدیر سایت», so the
-     header shows پنل مدیریت · خروج out of the box and a fresh visit never
-     lands on the empty ورود / عضویت state.
-
-     Rules:
-       - skipped while maintenance is on, so a visitor still hits the locked
-         screen exactly as before;
-       - «خروج» stores a flag in sessionStorage, which survives reloads in
-         that tab - signing out really signs out;
-       - closing the tab drops the flag and the default comes back. Opening
-         admin.html once also restores a session (the panel mints its own).
-
-       BACKEND NOTE: before go-live delete seedDefaultSession() and the flag
-       writes - sessions must only ever come from the server.
-     ========================================================================== */
-  const SIGNED_OUT_FLAG = "benamacademySignedOut";
-
-  function signedOutThisTab() {
-    try {
-      return sessionStorage.getItem(SIGNED_OUT_FLAG) === "1";
-    } catch (error) {
-      return false;
-    }
-  }
-
-  function maintenanceIsOn() {
-    try {
-      if (localStorage.getItem("benamacademyMaintenanceMode") === "true") {
-        return true;
-      }
-      const raw = localStorage.getItem("benamacademySystemSettings");
-      if (raw && JSON.parse(raw).maintenanceMode === true) return true;
-    } catch (error) {
-      /* broken settings must not affect the default state */
-    }
-    return false;
-  }
-
-  function seedDefaultSession() {
-    if (signedOutThisTab() || maintenanceIsOn()) return;
-    if (readSession()) return; // a real or existing session always wins
-    try {
-      localStorage.setItem(
-        "benamacademySession",
-        JSON.stringify({
-          token: "seed-" + Date.now().toString(36),
-          isAdmin: true,
-          user: { name: "مدیر سایت", role: "مدیر سایت" },
-        }),
-      );
-    } catch (error) {
-      /* storage unavailable: the header falls back to the signed-out markup */
-    }
-  }
-
-  function rememberSignOut() {
-    try {
-      sessionStorage.setItem(SIGNED_OUT_FLAG, "1");
-    } catch (error) {
-      /* private mode: sign-out still applies to this page view */
-    }
-  }
-
   /**
    * Build the two links a signed-in visitor sees.
    *
@@ -358,10 +292,9 @@
         try {
           if (typeof appApi !== "undefined") await appApi.auth.logout();
         } catch (error) {
-          /* clearing the local session is enough for the mock backend */
+          /* even if the server call fails, drop the local token */
         }
         localStorage.removeItem("benamacademySession");
-        rememberSignOut(); // stop the default session from re-seeding on the next load
         window.location.href = "index.html";
       });
     });
@@ -426,10 +359,6 @@
   }
 
   function init() {
-    // Seed the default demo session BEFORE anything renders, so
-    // checkMaintenanceMode, fixKnownLinks and renderAuthMenu all see the
-    // manager as the signed-in default (see DEFAULT SESSION above).
-    seedDefaultSession();
     checkMaintenanceMode();
     fixKnownLinks();
     bindSearch();

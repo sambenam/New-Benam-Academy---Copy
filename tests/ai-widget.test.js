@@ -108,7 +108,7 @@ async function clickSend(document, question) {
     runScripts: "outside-only",
   });
   const apiWindow = apiDom.window;
-  apiWindow.APP_CONFIG = { apiMode: "real", apiBaseUrl: "/api" };
+  apiWindow.APP_CONFIG = { apiBaseUrl: "/api" };
   apiWindow.Headers = global.Headers;
   apiWindow.AbortController = global.AbortController;
   apiWindow.localStorage.setItem("benamacademySession", JSON.stringify({ token: "bearer-token", user: { id: "user-42" } }));

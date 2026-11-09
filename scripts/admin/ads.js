@@ -144,15 +144,8 @@ function readAdForm() {
 
 function persistAdWrite(promise, successMessage, label, rollback) {
   Promise.resolve(promise)
-    .then((result) => {
-      if (result && result._localOnly) {
-        showToast(
-          "تبلیغ فقط در همین مرورگر ذخیره شد؛ پس از آماده‌شدن بک‌اند، دوباره از سرور استفاده می‌شود.",
-          "info",
-        );
-      } else {
-        showToast(successMessage, "success");
-      }
+    .then(() => {
+      showToast(successMessage, "success");
     })
     .catch((error) => {
       if (typeof rollback === "function") rollback();
