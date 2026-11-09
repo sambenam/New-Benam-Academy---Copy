@@ -1,0 +1,186 @@
+
+
+
+/* ---- report form: violation type ---- */
+.custom-select-option[data-value="content"] .opt-icon {
+    background: rgba(239, 68, 68, .15);
+    color: #f87171
+}
+
+.custom-select-option[data-value="copyright"] .opt-icon {
+    background: rgba(59, 130, 246, .15);
+    color: #60a5fa
+}
+
+.custom-select-option[data-value="abuse"] .opt-icon {
+    background: rgba(249, 115, 22, .15);
+    color: #fb923c
+}
+
+.custom-select-option[data-value="fraud"] .opt-icon {
+    background: rgba(168, 85, 247, .15);
+    color: #c084fc
+}
+
+.custom-select-option[data-value="other"] .opt-icon {
+    background: rgba(148, 163, 184, .15);
+    color: #94a3b8
+}
+
+/* ---- report form: severity, coloured by how serious it is ---- */
+.custom-select-option[data-value="low"] .opt-icon {
+    background: rgba(16, 185, 129, .15);
+    color: #34d399
+}
+
+.custom-select-option[data-value="medium"] .opt-icon {
+    background: rgba(234, 179, 8, .15);
+    color: #facc15
+}
+
+.custom-select-option[data-value="high"] .opt-icon {
+    background: rgba(239, 68, 68, .15);
+    color: #f87171
+}
+
+
+.form-group select option {
+    background-color: #141c32;
+    color: #f1f5f9;
+}
+
+
+/* روز */
+
+
+
+
+/* The chosen row needs its own light-mode pair, otherwise it kept the dark
+   theme's pale blue text on a white sheet and read as washed out. */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@media(max-width:980px) {
+    .contact-info {
+        grid-template-columns: 1fr
+    }
+
+    .form-row {
+        grid-template-columns: 1fr
+    }
+}
+
+@media(max-width:600px) {
+    .page-header {
+        padding: 1.5rem 1rem
+    }
+
+    .page-title {
+        font-size: 1.5rem
+    }
+
+    .contact-form-section,
+    .faq-section {
+        padding: 1.2rem
+    }
+}
+
+.form-message {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: .9rem;
+    line-height: 1.8;
+    background: rgba(59, 130, 246, .1);
+    color: var(--primary);
+}
+
+.form-message[data-type="success"] {
+    background: rgba(34, 197, 94, .12);
+    color: #16a34a;
+}
+
+.form-message[data-type="error"] {
+    background: rgba(239, 68, 68, .12);
+    color: #dc2626;
+}
+
+/* ============================================
+   گزارش تخلف
+   --------------------------------------------
+   Reporting a violation used to be one option inside the "موضوع" dropdown,
+   sitting between a study question and a partnership enquiry. It is a
+   different kind of thing, so it has its own section below the message form.
+   The form behind it is built in a later step.
+   ============================================ */
+.report-abuse-section {
+    margin-top: 2rem;
+}
+
+.report-abuse-note {
+    margin: 0 0 1.25rem;
+    font-size: 14px;
+    line-height: 2;
+    color: var(--text-secondary, #64748b);
+}
+
+.btn-outline-danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(239, 68, 68, 0.06);
+    color: #dc2626;
+    border: 1px solid rgba(239, 68, 68, 0.28);
+    border-radius: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.btn-outline-danger:hover:not(:disabled) {
+    background: #dc2626;
+    color: #fff;
+}
+
+.btn-outline-danger:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.report-abuse-soon {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(100, 116, 139, 0.16);
+    color: #475569;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* Report form sits inside the same section as the intro text. */
+.report-abuse-form {
+    margin-top: 1.5rem;
+}
+
+.field-optional {
+    font-size: 12px;
+    font-weight: 400;
+    color: #94a3b8;
+}
+
+/* The submit button is a real button now, not a disabled placeholder. */
+.report-abuse-form .btn-outline-danger {
+    margin-top: 0.5rem;
+}
